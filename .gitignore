@@ -1,10 +1,47 @@
-# OSX
-#
-.DS_Store
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
 
-# Xcode
-#
+# Expo
+.expo/
+dist/
+web-build/
+expo-env.d.ts
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+*.orig.*
+
+# React Native
+
+# Android/IntelliJ
+android/build/
+android/app/build/
+android/.gradle/
+android/local.properties
+android/.idea/
+android/app/.cxx/
+android/gradle/
+android/app/debug/
+android/app/release/
+*.iml
+*.hprof
+.cxx/
+.gradle/
 build/
+local.properties
+captures/
+.externalNativeBuild/
+.kotlin/
+
+# iOS/Xcode
+ios/build/
+ios/Pods/
+ios/Podfile.lock
+ios/.xcode.env.local
 *.pbxuser
 !default.pbxuser
 *.mode1v3
@@ -20,56 +57,139 @@ DerivedData
 *.hmap
 *.ipa
 *.xcuserstate
-**/.xcode.env.local
+project.xcworkspace/
+*.xcworkspace/
+ios/Bundle/
 
-# Android/IntelliJ
-#
-build/
-.idea
-.gradle
-local.properties
-*.iml
-*.hprof
-.cxx/
-*.keystore
-!debug.keystore
-.kotlin/
-
-# node.js
-#
-node_modules/
-npm-debug.log
-yarn-error.log
-
-# fastlane
-#
-# It is recommended to not store the screenshots in the git repo. Instead, use fastlane to re-generate the
-# screenshots whenever they are needed.
-# For more information about the recommended setup visit:
-# https://docs.fastlane.tools/best-practices/source-control/
-
-**/fastlane/report.xml
-**/fastlane/Preview.html
-**/fastlane/screenshots
-**/fastlane/test_output
-
-# Bundle artifact
-*.jsbundle
-
-# Ruby / CocoaPods
-**/Pods/
-/vendor/bundle/
-
-# Temporary files created by Metro to check the health of the file watcher
+# Metro
 .metro-health-check*
+metro.config.js.bak
 
-# testing
-/coverage
+# Testing
+coverage/
+*.lcov
+.nyc_output/
 
-# Yarn
+# Temporary files
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+.pnpm-debug.log*
+*.tmp
+*.temp
+tmp/
+temp/
+
+# Environment variables
+.env
+.env.local
+.env.development
+.env.test
+.env.production
+.env.*.local
+*.env
+
+# IDE - VSCode
+.vscode/
+!.vscode/extensions.json
+!.vscode/launch.json
+!.vscode/tasks.json
+!.vscode/settings.json
+*.code-workspace
+.history/
+
+# IDE - IntelliJ/Android Studio
+.idea/
+*.iws
+*.ipr
+out/
+.idea_modules/
+
+# IDE - Sublime Text
+*.tmlanguage.cache
+*.tmPreferences.cache
+*.stTheme.cache
+*.sublime-workspace
+*.sublime-project
+
+# IDE - Xcode
+xcuserdata/
+*.xcscmblueprint
+*.xcworkspacedata
+
+# OS Generated Files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+*~
+.fuse_hidden*
+.directory
+.Trash-*
+.nfs*
+desktop.ini
+
+# Bundle artifacts
+*.jsbundle
+*.map
+*.tsbuildinfo
+
+# Debug
+*.stackdump
+.attach_pid*
+
+# Package Manager
 .yarn/*
 !.yarn/patches
 !.yarn/plugins
 !.yarn/releases
 !.yarn/sdks
 !.yarn/versions
+.yarn-integrity
+.npm/
+
+# Ruby / CocoaPods
+/ios/Pods/
+/vendor/bundle/
+
+# Fastlane
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/screenshots
+fastlane/test_output
+
+# Backup files
+*.bak
+*.backup
+*.back
+backup/
+
+# Misc
+.eslintcache
+.stylelintcache
+.parcel-cache/
+.cache/
+.next/
+.nuxt/
+.vuepress/dist/
+.serverless/
+.fusebox/
+.dynamodb/
+.tern-port
+.vscode-test/
+.lock-wscript
+.grunt/
+bower_components/
+
+# Logs folder
+logs/
+*.log
+
+# Generated files
+generated/
+.docusaurus/
