@@ -19,7 +19,8 @@ export const ReservationManagementCard = ({
   onCancel,
   disabled = false,
 }) => {
-  const apartmentNumber = ValidationUtils.extractApartmentNumber(reservation.apartmentId);
+  // FIX: Use the correct field 'username' that comes from backend enrichment
+  const apartmentNumber = ValidationUtils.extractApartmentNumber(reservation.username);
   
   const getStatusColor = () => {
     return STATUS_COLORS[reservation.status] || COLORS.text.secondary;
@@ -73,23 +74,27 @@ export const ReservationManagementCard = ({
       <View style={styles.header}>
         <View style={styles.reservationInfo}>
           <Text style={styles.apartmentNumber}>Apartment {apartmentNumber}</Text>
-          <Text style={styles.amenityName}>{reservation.amenityId}</Text>
+          {/* FIX: Use amenityName field that already exists from backend */}
+          <Text style={styles.amenityName}>{reservation.amenityName}</Text>
           <Text style={styles.reservationId}>ID: {reservation.id.slice(0, 8).toUpperCase()}</Text>
         </View>
 
         <View style={styles.statusBadge}>
           <View style={[styles.statusIndicator, { backgroundColor: getStatusColor() }]}>
-            <Icon name={getStatusIcon()} size={16} color={COLORS.text.inverse} />
+            <Icon name={getStatusIcon()} size={16} color="#fff" />
           </View>
           <Text style={[styles.statusText, { color: getStatusColor() }]}>
             {reservation.status.toUpperCase()}
           </Text>
+          {reservation.status === 'pending' && (
+            <View style={[styles.priorityIndicator, { backgroundColor: getPriorityColor() }]} />
+          )}
         </View>
       </View>
 
       <View style={styles.timeInfo}>
         <View style={styles.timeRow}>
-          <Icon name="calendar-today" size={16} color={COLORS.text.secondary} />
+          <Icon name="calendar-today" size={14} color={COLORS.text.secondary} />
           <Text style={styles.timeLabel}>Date:</Text>
           <Text style={styles.timeValue}>
             {DateUtils.formatDate(reservation.startTime)}
@@ -97,7 +102,7 @@ export const ReservationManagementCard = ({
         </View>
 
         <View style={styles.timeRow}>
-          <Icon name="access-time" size={16} color={COLORS.text.secondary} />
+          <Icon name="access-time" size={14} color={COLORS.text.secondary} />
           <Text style={styles.timeLabel}>Time:</Text>
           <Text style={styles.timeValue}>
             {DateUtils.formatTime(reservation.startTime)} - {DateUtils.formatTime(reservation.endTime)}
@@ -105,7 +110,7 @@ export const ReservationManagementCard = ({
         </View>
 
         <View style={styles.timeRow}>
-          <Icon name="timer" size={16} color={COLORS.text.secondary} />
+          <Icon name="timer" size={14} color={COLORS.text.secondary} />
           <Text style={styles.timeLabel}>Duration:</Text>
           <Text style={styles.timeValue}>
             {DateUtils.getDurationText(reservation.startTime, reservation.endTime)}
@@ -113,79 +118,35 @@ export const ReservationManagementCard = ({
         </View>
       </View>
 
-      {(reservation.specialRequests?.visitorCount || 
-        reservation.specialRequests?.grillUsage || 
-        reservation.specialRequests?.notes) && (
+      {reservation.specialRequests && Object.keys(reservation.specialRequests).length > 0 && (
         <View style={styles.specialRequests}>
-          <Text style={styles.sectionTitle}>Special Requests:</Text>
-          
+          <Text style={styles.specialRequestsTitle}>Special Requests:</Text>
           {reservation.specialRequests.visitorCount && (
-            <View style={styles.requestRow}>
-              <Icon name="group" size={14} color={COLORS.text.secondary} />
-              <Text style={styles.requestText}>
-                {reservation.specialRequests.visitorCount} visitors
-              </Text>
-            </View>
+            <Text style={styles.specialRequestItem}>
+              <Icon name="group" size={12} color={COLORS.text.secondary} /> {reservation.specialRequests.visitorCount} visitors
+            </Text>
           )}
-
           {reservation.specialRequests.grillUsage && (
-            <View style={styles.requestRow}>
-              <Icon name="outdoor-grill" size={14} color={COLORS.text.secondary} />
-              <Text style={styles.requestText}>Grill usage requested</Text>
-            </View>
-          )}
-
-          {reservation.specialRequests.notes && (
-            <View style={styles.notesContainer}>
-              <Text style={styles.notesText}>{reservation.specialRequests.notes}</Text>
-            </View>
-          )}
-        </View>
-      )}
-
-      <View style={styles.metadata}>
-        <View style={styles.metadataRow}>
-          <Icon name="schedule" size={14} color={COLORS.text.secondary} />
-          <Text style={styles.metadataText}>
-            Submitted: {DateUtils.formatDateTime(reservation.submittedAt)}
-          </Text>
-        </View>
-
-        {reservation.status === 'pending' && DateUtils.isFuture(reservation.startTime) && (
-          <View style={styles.metadataRow}>
-            <Icon name="priority-high" size={14} color={getPriorityColor()} />
-            <Text style={[styles.metadataText, { color: getPriorityColor() }]}>
-              Priority: {getPriorityLevel().toUpperCase()}
+            <Text style={styles.specialRequestItem}>
+              <Icon name="outdoor-grill" size={12} color={COLORS.text.secondary} /> Grill usage requested
             </Text>
-          </View>
-        )}
-
-        {reservation.depositRequired && (
-          <View style={styles.metadataRow}>
-            <Icon name="account-balance-wallet" size={14} color={COLORS.warning} />
-            <Text style={[styles.metadataText, { color: COLORS.warning }]}>
-              ${reservation.depositAmount} deposit required
+          )}
+          {reservation.submittedAt && (
+            <Text style={styles.submittedInfo}>
+              Submitted: {DateUtils.formatRelativeTime(reservation.submittedAt)}
             </Text>
-          </View>
-        )}
-      </View>
-
-      {reservation.denialReason && (
-        <View style={styles.denialContainer}>
-          <Text style={styles.denialLabel}>Denial Reason:</Text>
-          <Text style={styles.denialReason}>{reservation.denialReason}</Text>
+          )}
         </View>
       )}
 
       <View style={styles.actions}>
         {onViewDetails && (
           <TouchableOpacity 
-            style={styles.actionButton}
+            style={styles.detailsButton}
             onPress={onViewDetails}
             disabled={disabled}
           >
-            <Icon name="visibility" size={16} color={COLORS.primary} />
-            <Text style={styles.actionText}>Details</Text>
+            <Text style={styles.detailsText}>Details</Text>
           </TouchableOpacity>
         )}
 
@@ -277,6 +238,12 @@ const styles = StyleSheet.create({
     fontSize: FONT_SIZES.xs,
     fontWeight: '600',
   },
+  priorityIndicator: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginTop: SPACING.xs / 2,
+  },
   timeInfo: {
     backgroundColor: COLORS.background,
     borderRadius: 8,
@@ -292,111 +259,80 @@ const styles = StyleSheet.create({
     fontSize: FONT_SIZES.sm,
     color: COLORS.text.secondary,
     marginLeft: SPACING.xs,
-    width: 60,
+    marginRight: SPACING.xs,
   },
   timeValue: {
     fontSize: FONT_SIZES.sm,
     color: COLORS.text.primary,
     fontWeight: '500',
-    flex: 1,
   },
   specialRequests: {
+    backgroundColor: COLORS.warning + '10',
+    borderRadius: 8,
+    padding: SPACING.sm,
     marginBottom: SPACING.sm,
   },
-  sectionTitle: {
+  specialRequestsTitle: {
     fontSize: FONT_SIZES.sm,
     fontWeight: '600',
     color: COLORS.text.primary,
     marginBottom: SPACING.xs,
   },
-  requestRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  specialRequestItem: {
+    fontSize: FONT_SIZES.xs,
+    color: COLORS.text.secondary,
     marginBottom: SPACING.xs / 2,
   },
-  requestText: {
-    fontSize: FONT_SIZES.sm,
+  submittedInfo: {
+    fontSize: FONT_SIZES.xs,
     color: COLORS.text.secondary,
-    marginLeft: SPACING.xs,
-  },
-  notesContainer: {
-    backgroundColor: COLORS.background,
-    padding: SPACING.xs,
-    borderRadius: 6,
-    marginTop: SPACING.xs / 2,
-  },
-  notesText: {
-    fontSize: FONT_SIZES.sm,
-    color: COLORS.text.primary,
     fontStyle: 'italic',
-  },
-  metadata: {
-    marginBottom: SPACING.sm,
-  },
-  metadataRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: SPACING.xs / 2,
-  },
-  metadataText: {
-    fontSize: FONT_SIZES.xs,
-    color: COLORS.text.secondary,
-    marginLeft: SPACING.xs,
-  },
-  denialContainer: {
-    backgroundColor: '#FFF5F5',
-    borderRadius: 8,
-    padding: SPACING.sm,
-    marginBottom: SPACING.sm,
-    borderLeftWidth: 4,
-    borderLeftColor: COLORS.error,
-  },
-  denialLabel: {
-    fontSize: FONT_SIZES.xs,
-    fontWeight: '600',
-    color: COLORS.error,
-    marginBottom: SPACING.xs / 2,
-  },
-  denialReason: {
-    fontSize: FONT_SIZES.sm,
-    color: COLORS.text.primary,
+    marginTop: SPACING.xs,
   },
   actions: {
     flexDirection: 'row',
-    justifyContent: 'space-around',
-    borderTopWidth: 1,
-    borderTopColor: COLORS.background,
-    paddingTop: SPACING.sm,
+    justifyContent: 'flex-end',
+    gap: SPACING.xs,
+  },
+  detailsButton: {
+    paddingVertical: SPACING.xs,
+    paddingHorizontal: SPACING.sm,
+  },
+  detailsText: {
+    fontSize: FONT_SIZES.sm,
+    color: COLORS.primary,
+    fontWeight: '500',
   },
   actionButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: SPACING.xs,
+    paddingVertical: SPACING.xs,
+    paddingHorizontal: SPACING.sm,
     borderRadius: 6,
-    backgroundColor: 'transparent',
-    minWidth: 70,
-    justifyContent: 'center',
-  },
-  actionText: {
-    fontSize: FONT_SIZES.xs,
-    color: COLORS.primary,
-    fontWeight: '600',
-    marginLeft: SPACING.xs / 2,
+    borderWidth: 1,
+    gap: SPACING.xs / 2,
   },
   approveButton: {
-    backgroundColor: '#F0FFF4',
+    borderColor: COLORS.success,
+    backgroundColor: COLORS.success + '10',
+  },
+  denyButton: {
+    borderColor: COLORS.error,
+    backgroundColor: COLORS.error + '10',
+  },
+  cancelButton: {
+    borderColor: COLORS.error,
+    backgroundColor: COLORS.error + '10',
+  },
+  actionText: {
+    fontSize: FONT_SIZES.sm,
+    fontWeight: '500',
   },
   approveText: {
     color: COLORS.success,
   },
-  denyButton: {
-    backgroundColor: '#FFF5F5',
-  },
   denyText: {
     color: COLORS.error,
-  },
-  cancelButton: {
-    backgroundColor: '#FFF5F5',
   },
   cancelText: {
     color: COLORS.error,
