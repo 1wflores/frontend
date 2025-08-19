@@ -131,6 +131,23 @@ export const useReservations = () => {
     }
   }, [fetchUserReservations]);
 
+  // FIX: Add the missing getAvailableSlots function
+  const getAvailableSlots = useCallback(async (amenityId, date) => {
+    try {
+      setLoading(true);
+      setError(null);
+      
+      const slots = await reservationService.getAvailableSlots(amenityId, date);
+      return slots;
+    } catch (err) {
+      setError(err.message);
+      console.error('Error fetching available slots:', err);
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
   // Debounced search for admin panel
   const searchReservations = useCallback(
     debounce(async (query) => {
@@ -158,6 +175,7 @@ export const useReservations = () => {
     fetchUserReservations,
     createReservation,
     cancelReservation,
+    getAvailableSlots, // FIX: Export the getAvailableSlots function
     searchReservations,
     clearCache,
   };
