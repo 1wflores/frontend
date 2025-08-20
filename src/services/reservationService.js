@@ -77,6 +77,7 @@ export class ReservationService {
     try {
       const response = await apiClient.patch(`/api/reservations/${reservationId}/status`, {
         status: 'approved'
+        // Don't send denialReason for approvals to avoid validation issues
       });
       return response.data.data.reservation;
     } catch (error) {
@@ -99,10 +100,14 @@ export class ReservationService {
 
   async updateReservationStatus(reservationId, status, denialReason = null) {
     try {
-      const response = await apiClient.patch(`/api/reservations/${reservationId}/status`, {
-        status,
-        denialReason
-      });
+      const payload = { status };
+      
+      // Only include denialReason if it has a value to avoid validation issues
+      if (denialReason && denialReason.trim()) {
+        payload.denialReason = denialReason;
+      }
+      
+      const response = await apiClient.patch(`/api/reservations/${reservationId}/status`, payload);
       return response.data.data.reservation;
     } catch (error) {
       throw error;
