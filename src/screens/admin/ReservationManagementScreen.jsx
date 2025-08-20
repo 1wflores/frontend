@@ -8,12 +8,12 @@ import {
   Alert,
   TouchableOpacity,
   Modal,
+  TextInput,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
-import { reservationService } from '../../services/reservationService'; // ✅ Use real service
+import { reservationService } from '../../services/reservationService';
 import { ReservationManagementCard } from '../../components/admin/ReservationManagementCard';
 import { Button } from '../../components/common/Button';
-import { Input } from '../../components/common/Input';
 import { LoadingSpinner } from '../../components/common/LoadingSpinner';
 import { Card } from '../../components/common/Card';
 import { DateUtils } from '../../utils/dateUtils';
@@ -38,11 +38,34 @@ const ReservationManagementScreen = () => {
     filterReservations();
   }, [reservations, searchQuery, selectedFilter]);
 
+  // Validation function for denial reason
+  const validateDenialReason = (reason) => {
+    if (!reason || reason.trim().length === 0) {
+      return 'Please provide a reason for denying this reservation';
+    }
+    
+    if (reason.trim().length < 10) {
+      return 'Please provide a more detailed justification (at least 10 characters)';
+    }
+    
+    if (reason.trim().length > 500) {
+      return 'Denial reason is too long (maximum 500 characters)';
+    }
+    
+    // Check if it's just repeated characters or meaningless
+    const uniqueChars = new Set(reason.trim().toLowerCase().replace(/\s/g, '')).size;
+    if (uniqueChars < 3) {
+      return 'Please provide a valid justification for denying the reservation';
+    }
+    
+    return null; // No error
+  };
+
   const fetchReservations = async () => {
     try {
       setLoading(true);
       
-      // ✅ FIXED: Use real API call instead of mock data
+      // Use real API call
       const response = await reservationService.getAllReservations();
       setReservations(response.reservations || []);
       
@@ -114,235 +137,157 @@ const ReservationManagementScreen = () => {
           text: 'Approve',
           onPress: async () => {
             try {
-              // ✅ FIXED: Use real API call
               await reservationService.updateReservationStatus(reservation.id, 'approved');
               Alert.alert('Success', 'Reservation approved successfully');
-              await fetchReservations(); // Refresh data
+              await fetchReservations();
             } catch (error) {
               console.error('Error approving reservation:', error);
               Alert.alert('Error', 'Failed to approve reservation');
             }
-          },
-        },
+          }
+        }
       ]
     );
   };
 
   const handleDenyReservation = (reservation) => {
     setSelectedReservation(reservation);
+    setDenialReason(''); // Reset the reason
     setDenyModalVisible(true);
   };
 
   const submitDenial = async () => {
-    if (!denialReason.trim()) {
-      Alert.alert('Error', 'Please provide a reason for denial');
+    // Validate the denial reason
+    const validationError = validateDenialReason(denialReason);
+    
+    if (validationError) {
+      Alert.alert(
+        'Invalid Denial Reason',
+        validationError,
+        [{ text: 'OK' }]
+      );
       return;
     }
 
-    if (!selectedReservation) return;
-
     try {
-      // ✅ FIXED: Use real API call
+      setLoading(true);
+      
       await reservationService.updateReservationStatus(
         selectedReservation.id, 
         'denied', 
         denialReason.trim()
       );
       
-      Alert.alert('Success', 'Reservation denied successfully');
-      await fetchReservations(); // Refresh data
-      
+      Alert.alert(
+        'Success', 
+        'Reservation denied successfully',
+        [{ 
+          text: 'OK',
+          onPress: () => {
+            setDenyModalVisible(false);
+            setDenialReason('');
+            setSelectedReservation(null);
+            fetchReservations(); // Refresh the list
+          }
+        }]
+      );
     } catch (error) {
       console.error('Error denying reservation:', error);
-      Alert.alert('Error', 'Failed to deny reservation');
+      Alert.alert(
+        'Error', 
+        'Failed to deny reservation. Please try again.',
+        [{ text: 'OK' }]
+      );
     } finally {
-      setDenyModalVisible(false);
-      setSelectedReservation(null);
-      setDenialReason('');
+      setLoading(false);
     }
   };
-
-  const handleCancelReservation = async (reservation) => {
-    const apartmentId = reservation.username || reservation.userId;
-    Alert.alert(
-      'Cancel Reservation',
-      `Cancel this approved reservation for ${apartmentId}?`,
-      [
-        { text: 'No', style: 'cancel' },
-        {
-          text: 'Yes, Cancel',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              // ✅ FIXED: Use real API call
-              await reservationService.cancelReservation(reservation.id);
-              Alert.alert('Success', 'Reservation cancelled successfully');
-              await fetchReservations(); // Refresh data
-            } catch (error) {
-              console.error('Error cancelling reservation:', error);
-              Alert.alert('Error', 'Failed to cancel reservation');
-            }
-          },
-        },
-      ]
-    );
-  };
-
-  const handleViewDetails = (reservation) => {
-    Alert.alert(
-      'Reservation Details',
-      `Detailed view for reservation ${reservation.id.slice(0, 8)} will be implemented in a future update.`,
-      [{ text: 'OK' }]
-    );
-  };
-
-  const filters = [
-    { key: 'pending', label: 'Pending', count: reservations.filter(r => r.status === 'pending').length },
-    { key: 'approved', label: 'Approved', count: reservations.filter(r => r.status === 'approved').length },
-    { key: 'denied', label: 'Denied', count: reservations.filter(r => r.status === 'denied').length },
-    { key: 'today', label: 'Today', count: reservations.filter(r => DateUtils.isToday(r.startTime)).length },
-    { key: 'all', label: 'All', count: reservations.length },
-  ];
-
-  const renderFilterButton = (filter) => (
-    <TouchableOpacity
-      key={filter.key}
-      style={[
-        styles.filterButton,
-        selectedFilter === filter.key && styles.activeFilterButton,
-      ]}
-      onPress={() => setSelectedFilter(filter.key)}
-    >
-      <Text
-        style={[
-          styles.filterText,
-          selectedFilter === filter.key && styles.activeFilterText,
-        ]}
-      >
-        {filter.label}
-      </Text>
-      {filter.count > 0 && (
-        <View style={[
-          styles.filterBadge,
-          selectedFilter === filter.key && styles.activeFilterBadge,
-        ]}>
-          <Text style={[
-            styles.filterBadgeText,
-            selectedFilter === filter.key && styles.activeFilterBadgeText,
-          ]}>
-            {filter.count}
-          </Text>
-        </View>
-      )}
-    </TouchableOpacity>
-  );
 
   const renderReservationItem = ({ item }) => (
     <ReservationManagementCard
       reservation={item}
       onApprove={() => handleApproveReservation(item)}
       onDeny={() => handleDenyReservation(item)}
-      onCancel={() => handleCancelReservation(item)}
-      onViewDetails={() => handleViewDetails(item)}
     />
   );
 
   const renderEmptyState = () => (
-    <Card style={styles.emptyState}>
+    <View style={styles.emptyState}>
       <Icon name="event-available" size={64} color={COLORS.text.secondary} />
       <Text style={styles.emptyTitle}>No Reservations</Text>
       <Text style={styles.emptyText}>
-        {searchQuery || selectedFilter !== 'all'
-          ? 'No reservations match your current filters.'
-          : 'No reservations have been made yet.'}
+        {selectedFilter === 'pending' 
+          ? 'No pending reservations to review'
+          : 'No reservations found for the selected filter'}
       </Text>
-    </Card>
+    </View>
   );
 
-  const renderDenyModal = () => (
-    <Modal
-      visible={denyModalVisible}
-      animationType="slide"
-      transparent
-      onRequestClose={() => setDenyModalVisible(false)}
-    >
-      <View style={styles.modalOverlay}>
-        <View style={styles.modalContainer}>
-          <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>Deny Reservation</Text>
-            <TouchableOpacity
-              onPress={() => setDenyModalVisible(false)}
-              style={styles.modalCloseButton}
-            >
-              <Icon name="close" size={24} color={COLORS.text.primary} />
-            </TouchableOpacity>
-          </View>
-          
-          <Text style={styles.modalSubtitle}>
-            Please provide a reason for denying this reservation:
-          </Text>
-          
-          <Input
-            label="Denial Reason"
-            placeholder="e.g., Facility under maintenance, Double booking, etc."
-            value={denialReason}
-            onChangeText={setDenialReason}
-            multiline
-            numberOfLines={3}
-            style={styles.denialInput}
-          />
-          
-          <View style={styles.modalActions}>
-            <Button
-              title="Cancel"
-              variant="outline"
-              onPress={() => setDenyModalVisible(false)}
-              style={styles.modalButton}
-            />
-            <Button
-              title="Deny Reservation"
-              variant="danger"
-              onPress={submitDenial}
-              style={styles.modalButton}
-            />
-          </View>
-        </View>
-      </View>
-    </Modal>
-  );
+  const filterButtons = [
+    { key: 'pending', label: 'Pending', icon: 'hourglass-empty' },
+    { key: 'approved', label: 'Approved', icon: 'check-circle' },
+    { key: 'denied', label: 'Denied', icon: 'cancel' },
+    { key: 'today', label: 'Today', icon: 'today' },
+    { key: 'all', label: 'All', icon: 'list' },
+  ];
 
-  if (loading && reservations.length === 0) {
+  if (loading && !refreshing) {
     return <LoadingSpinner message="Loading reservations..." />;
   }
 
-  const pendingCount = reservations.filter(r => r.status === 'pending').length;
-
   return (
     <View style={styles.container}>
-      {/* Priority Alert */}
-      {pendingCount > 0 && (
-        <View style={styles.priorityAlert}>
-          <Icon name="priority-high" size={20} color={COLORS.warning} />
-          <Text style={styles.priorityText}>
-            {pendingCount} reservation{pendingCount > 1 ? 's' : ''} pending approval
+      {/* Stats Cards */}
+      <View style={styles.statsContainer}>
+        <Card style={styles.statCard}>
+          <Icon name="hourglass-empty" size={24} color={COLORS.warning} />
+          <Text style={styles.statNumber}>
+            {reservations.filter(r => r.status === 'pending').length}
           </Text>
-        </View>
-      )}
-
-      {/* Search */}
-      <View style={styles.searchContainer}>
-        <Input
-          placeholder="Search by apartment, amenity, or ID..."
-          value={searchQuery}
-          onChangeText={setSearchQuery}
-          leftIcon="search"
-          style={styles.searchInput}
-        />
+          <Text style={styles.statLabel}>Pending</Text>
+        </Card>
+        
+        <Card style={styles.statCard}>
+          <Icon name="check-circle" size={24} color={COLORS.success} />
+          <Text style={styles.statNumber}>
+            {reservations.filter(r => r.status === 'approved' && DateUtils.isToday(r.startTime)).length}
+          </Text>
+          <Text style={styles.statLabel}>Today</Text>
+        </Card>
+        
+        <Card style={styles.statCard}>
+          <Icon name="event" size={24} color={COLORS.primary} />
+          <Text style={styles.statNumber}>
+            {reservations.length}
+          </Text>
+          <Text style={styles.statLabel}>Total</Text>
+        </Card>
       </View>
 
-      {/* Filters */}
-      <View style={styles.filtersContainer}>
-        {filters.map(renderFilterButton)}
+      {/* Filter Buttons */}
+      <View style={styles.filterContainer}>
+        {filterButtons.map((filter) => (
+          <TouchableOpacity
+            key={filter.key}
+            style={[
+              styles.filterButton,
+              selectedFilter === filter.key && styles.activeFilterButton
+            ]}
+            onPress={() => setSelectedFilter(filter.key)}
+          >
+            <Icon 
+              name={filter.icon} 
+              size={18} 
+              color={selectedFilter === filter.key ? COLORS.surface : COLORS.text.secondary}
+            />
+            <Text style={[
+              styles.filterText,
+              selectedFilter === filter.key && styles.activeFilterText
+            ]}>
+              {filter.label}
+            </Text>
+          </TouchableOpacity>
+        ))}
       </View>
 
       {/* Reservations List */}
@@ -358,46 +303,126 @@ const ReservationManagementScreen = () => {
         showsVerticalScrollIndicator={false}
       />
 
-      {/* Deny Modal */}
-      {renderDenyModal()}
+      {/* Denial Modal */}
+      <Modal
+        visible={denyModalVisible}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setDenyModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContainer}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Deny Reservation</Text>
+              <TouchableOpacity
+                style={styles.modalCloseButton}
+                onPress={() => {
+                  setDenyModalVisible(false);
+                  setDenialReason('');
+                }}
+              >
+                <Icon name="close" size={24} color={COLORS.text.secondary} />
+              </TouchableOpacity>
+            </View>
+
+            {selectedReservation && (
+              <>
+                <Text style={styles.modalSubtitle}>
+                  Reservation for {selectedReservation.amenityName || 'Amenity'} by{' '}
+                  {selectedReservation.username || selectedReservation.userId}
+                </Text>
+                
+                <View style={styles.denialReasonContainer}>
+                  <Text style={styles.inputLabel}>
+                    Reason for Denial <Text style={styles.required}>*</Text>
+                  </Text>
+                  <TextInput
+                    style={[
+                      styles.denialInput,
+                      denialReason.trim().length > 0 && denialReason.trim().length < 10 && styles.inputError
+                    ]}
+                    placeholder="Please provide a detailed justification for denying this reservation..."
+                    value={denialReason}
+                    onChangeText={setDenialReason}
+                    multiline
+                    numberOfLines={4}
+                    maxLength={500}
+                    textAlignVertical="top"
+                  />
+                  <View style={styles.inputHelperContainer}>
+                    <Text style={[
+                      styles.characterCount,
+                      denialReason.trim().length > 450 && styles.characterCountWarning
+                    ]}>
+                      {denialReason.length}/500 characters
+                    </Text>
+                    {denialReason.trim().length > 0 && denialReason.trim().length < 10 && (
+                      <Text style={styles.errorText}>
+                        Minimum 10 characters required
+                      </Text>
+                    )}
+                  </View>
+                </View>
+
+                <View style={styles.modalActions}>
+                  <Button
+                    title="Cancel"
+                    onPress={() => {
+                      setDenyModalVisible(false);
+                      setDenialReason('');
+                    }}
+                    variant="outline"
+                    style={styles.modalButton}
+                  />
+                  <Button
+                    title={loading ? "Denying..." : "Confirm Denial"}
+                    onPress={submitDenial}
+                    variant="danger"
+                    style={styles.modalButton}
+                    disabled={loading || !denialReason.trim() || denialReason.trim().length < 10}
+                  />
+                </View>
+              </>
+            )}
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 };
 
-// Styles remain the same as they're already correct
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: COLORS.background,
   },
-  priorityAlert: {
+  statsContainer: {
     flexDirection: 'row',
+    justifyContent: 'space-around',
+    padding: SPACING.md,
+  },
+  statCard: {
+    flex: 1,
     alignItems: 'center',
-    backgroundColor: '#FFF8E1',
-    padding: SPACING.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.warning,
-  },
-  priorityText: {
-    fontSize: FONT_SIZES.sm,
-    color: COLORS.warning,
-    fontWeight: '600',
-    marginLeft: SPACING.xs,
-  },
-  searchContainer: {
+    marginHorizontal: SPACING.xs,
     padding: SPACING.md,
-    backgroundColor: COLORS.surface,
   },
-  searchInput: {
-    marginBottom: 0,
+  statNumber: {
+    fontSize: FONT_SIZES.xl,
+    fontWeight: 'bold',
+    color: COLORS.text.primary,
+    marginTop: SPACING.xs,
   },
-  filtersContainer: {
+  statLabel: {
+    fontSize: FONT_SIZES.xs,
+    color: COLORS.text.secondary,
+    marginTop: SPACING.xs / 2,
+  },
+  filterContainer: {
     flexDirection: 'row',
-    padding: SPACING.md,
-    paddingTop: SPACING.sm,
-    backgroundColor: COLORS.surface,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.background,
+    paddingHorizontal: SPACING.md,
+    paddingBottom: SPACING.sm,
+    justifyContent: 'space-around',
   },
   filterButton: {
     flexDirection: 'row',
@@ -405,39 +430,19 @@ const styles = StyleSheet.create({
     paddingHorizontal: SPACING.sm,
     paddingVertical: SPACING.xs,
     borderRadius: 20,
-    backgroundColor: COLORS.background,
-    marginRight: SPACING.xs,
+    backgroundColor: COLORS.surface,
   },
   activeFilterButton: {
     backgroundColor: COLORS.primary,
   },
   filterText: {
-    fontSize: FONT_SIZES.sm,
+    fontSize: FONT_SIZES.xs,
     color: COLORS.text.secondary,
+    marginLeft: SPACING.xs / 2,
     fontWeight: '600',
   },
   activeFilterText: {
-    color: COLORS.text.inverse,
-  },
-  filterBadge: {
-    backgroundColor: COLORS.text.secondary,
-    borderRadius: 10,
-    minWidth: 20,
-    height: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginLeft: SPACING.xs,
-  },
-  activeFilterBadge: {
-    backgroundColor: COLORS.text.inverse,
-  },
-  filterBadgeText: {
-    fontSize: FONT_SIZES.xs,
-    fontWeight: '600',
-    color: COLORS.text.inverse,
-  },
-  activeFilterBadgeText: {
-    color: COLORS.primary,
+    color: COLORS.surface,
   },
   listContainer: {
     padding: SPACING.md,
@@ -493,12 +498,53 @@ const styles = StyleSheet.create({
     color: COLORS.text.secondary,
     marginBottom: SPACING.md,
   },
+  denialReasonContainer: {
+    marginVertical: SPACING.md,
+  },
+  inputLabel: {
+    fontSize: FONT_SIZES.sm,
+    fontWeight: '600',
+    color: COLORS.text.primary,
+    marginBottom: SPACING.xs,
+  },
+  required: {
+    color: COLORS.error,
+  },
   denialInput: {
-    marginBottom: SPACING.lg,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 8,
+    padding: SPACING.md,
+    fontSize: FONT_SIZES.md,
+    color: COLORS.text.primary,
+    backgroundColor: COLORS.surface,
+    minHeight: 100,
+  },
+  inputError: {
+    borderColor: COLORS.error,
+  },
+  inputHelperContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: SPACING.xs,
+  },
+  characterCount: {
+    fontSize: FONT_SIZES.xs,
+    color: COLORS.text.secondary,
+  },
+  characterCountWarning: {
+    color: COLORS.warning,
+  },
+  errorText: {
+    fontSize: FONT_SIZES.xs,
+    color: COLORS.error,
+    fontWeight: '500',
   },
   modalActions: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    marginTop: SPACING.lg,
   },
   modalButton: {
     flex: 0.48,
