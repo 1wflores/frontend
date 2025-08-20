@@ -72,18 +72,23 @@ export class ReservationService {
     }
   }
 
+  // ✅ FIXED: Use the correct endpoint that exists in your backend
   async approveReservation(reservationId) {
     try {
-      const response = await apiClient.patch(`/api/reservations/${reservationId}/approve`);
+      const response = await apiClient.patch(`/api/reservations/${reservationId}/status`, {
+        status: 'approved'
+      });
       return response.data.data.reservation;
     } catch (error) {
       throw error;
     }
   }
 
+  // ✅ FIXED: Use the correct endpoint that exists in your backend
   async denyReservation(reservationId, denialReason) {
     try {
-      const response = await apiClient.patch(`/api/reservations/${reservationId}/deny`, {
+      const response = await apiClient.patch(`/api/reservations/${reservationId}/status`, {
+        status: 'denied',
         denialReason
       });
       return response.data.data.reservation;
