@@ -10,20 +10,31 @@ import {
   Modal,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
+import { useNavigation } from '@react-navigation/native';
 import { useAmenities } from '../../hooks/useAmenities';
 import { AmenityCard } from '../../components/reservation/AmenityCard';
+import { AmenityFormModal } from '../../components/admin/AmenityFormModal';
 import { Button } from '../../components/common/Button';
 import { Input } from '../../components/common/Input';
 import { LoadingSpinner } from '../../components/common/LoadingSpinner';
 import { Card } from '../../components/common/Card';
+import { apiClient } from '../../services/apiClient';
 import { COLORS, SPACING, FONT_SIZES } from '../../utils/constants';
 
 const AmenityManagementScreen = () => {
+  const navigation = useNavigation();
   const { amenities, loading, fetchAmenities } = useAmenities();
   const [filteredAmenities, setFilteredAmenities] = useState([]);
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedFilter, setSelectedFilter] = useState('all');
+  
+  // Form Modal State
+  const [formModalVisible, setFormModalVisible] = useState(false);
+  const [editingAmenity, setEditingAmenity] = useState(null);
+  const [formLoading, setFormLoading] = useState(false);
+  
+  // Maintenance Modal State
   const [maintenanceModalVisible, setMaintenanceModalVisible] = useState(false);
   const [selectedAmenity, setSelectedAmenity] = useState(null);
   const [maintenanceNotes, setMaintenanceNotes] = useState('');
@@ -66,7 +77,61 @@ const AmenityManagementScreen = () => {
     setRefreshing(false);
   };
 
-  const handleToggleMaintenance = (amenity) => {
+  const handleCreateAmenity = () => {
+    setEditingAmenity(null);
+    setFormModalVisible(true);
+  };
+
+  const handleEditAmenity = (amenity) => {
+    setEditingAmenity(amenity);
+    setFormModalVisible(true);
+  };
+
+  const handleViewReservations = (amenity) => {
+    navigation.navigate('AmenityReservations', {
+      amenityId: amenity.id,
+      amenityName: amenity.name,
+    });
+  };
+
+  const handleFormSubmit = async (formData) => {
+    try {
+      setFormLoading(true);
+      
+      let response;
+      if (editingAmenity) {
+        // Update existing amenity
+        response = await apiClient.put(`/api/amenities/${editingAmenity.id}`, formData);
+      } else {
+        // Create new amenity
+        response = await apiClient.post('/api/amenities', formData);
+      }
+
+      if (response.data.success) {
+        Alert.alert(
+          'Success',
+          editingAmenity 
+            ? 'Amenity updated successfully!' 
+            : 'Amenity created successfully!'
+        );
+        setFormModalVisible(false);
+        setEditingAmenity(null);
+        await fetchAmenities(); // Refresh the list
+      } else {
+        throw new Error(response.data.message || 'Operation failed');
+      }
+    } catch (error) {
+      console.error('Form submit error:', error);
+      Alert.alert(
+        'Error',
+        error.response?.data?.message || error.message || 'Operation failed. Please try again.'
+      );
+    } finally {
+      setFormLoading(false);
+    }
+  };
+
+  const handleToggleMaintenance = async (amenity) => {
     if (amenity.isActive) {
       // Put under maintenance
       setSelectedAmenity(amenity);
@@ -80,12 +145,36 @@ const AmenityManagementScreen = () => {
           { text: 'Cancel', style: 'cancel' },
           {
             text: 'Reactivate',
-            onPress: () => {
-              // Simulate API call
-              Alert.alert('Success', `${amenity.name} has been reactivated`);
-            },
+            onPress: () => updateAmenityStatus(amenity.id, true),
           },
         ]
+      );
+    }
+  };
+
+  const updateAmenityStatus = async (amenityId, isActive, notes = '') => {
+    try {
+      const response = await apiClient.put(`/api/amenities/${amenityId}`, {
+        isActive,
+        maintenanceNotes: notes,
+      });
+
+      if (response.data.success) {
+        Alert.alert(
+          'Success',
+          isActive 
+            ? 'Amenity has been reactivated' 
+            : 'Amenity has been put under maintenance'
+        );
+        await fetchAmenities(); // Refresh the list
+      } else {
+        throw new Error(response.data.message || 'Failed to update amenity status');
+      }
+    } catch (error) {
+      console.error('Update amenity status error:', error);
+      Alert.alert(
+        'Error',
+        'Failed to update amenity status. Please try again.'
       );
     }
   };
@@ -97,11 +186,7 @@ const AmenityManagementScreen = () => {
     }
 
     if (selectedAmenity) {
-      // Simulate API call
-      Alert.alert(
-        'Success', 
-        `${selectedAmenity.name} has been put under maintenance`
-      );
+      updateAmenityStatus(selectedAmenity.id, false, maintenanceNotes);
     }
 
     setMaintenanceModalVisible(false);
@@ -109,28 +194,38 @@ const AmenityManagementScreen = () => {
     setMaintenanceNotes('');
   };
 
-  const handleCreateAmenity = () => {
+  const handleDeleteAmenity = (amenity) => {
     Alert.alert(
-      'Create Amenity',
-      'Amenity creation feature will be implemented in a future update.',
-      [{ text: 'OK' }]
+      'Delete Amenity',
+      `Are you sure you want to delete ${amenity.name}? This action cannot be undone.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: () => deleteAmenity(amenity.id),
+        },
+      ]
     );
   };
 
-  const handleEditAmenity = (amenity) => {
-    Alert.alert(
-      'Edit Amenity',
-      `Edit functionality for ${amenity.name} will be implemented in a future update.`,
-      [{ text: 'OK' }]
-    );
-  };
+  const deleteAmenity = async (amenityId) => {
+    try {
+      const response = await apiClient.delete(`/api/amenities/${amenityId}`);
 
-  const handleViewReservations = (amenity) => {
-    Alert.alert(
-      'Amenity Reservations',
-      `View reservations for ${amenity.name} will be implemented in a future update.`,
-      [{ text: 'OK' }]
-    );
+      if (response.data.success) {
+        Alert.alert('Success', 'Amenity deleted successfully');
+        await fetchAmenities(); // Refresh the list
+      } else {
+        throw new Error(response.data.message || 'Failed to delete amenity');
+      }
+    } catch (error) {
+      console.error('Delete amenity error:', error);
+      Alert.alert(
+        'Error',
+        'Failed to delete amenity. Please try again.'
+      );
+    }
   };
 
   const filters = [
@@ -197,6 +292,16 @@ const AmenityManagementScreen = () => {
             { color: item.isActive ? COLORS.warning : COLORS.success }
           ]}>
             {item.isActive ? 'Maintenance' : 'Activate'}
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.actionButton, styles.deleteAction]}
+          onPress={() => handleDeleteAmenity(item)}
+        >
+          <Icon name="delete" size={16} color={COLORS.error} />
+          <Text style={[styles.actionText, { color: COLORS.error }]}>
+            Delete
           </Text>
         </TouchableOpacity>
       </View>
@@ -312,11 +417,15 @@ const AmenityManagementScreen = () => {
           <Text style={styles.statLabel}>Total</Text>
         </Card>
         <Card style={styles.statCard}>
-          <Text style={styles.statNumber}>{amenities.filter(a => a.isActive).length}</Text>
+          <Text style={styles.statNumber}>
+            {amenities.filter(a => a.isActive).length}
+          </Text>
           <Text style={styles.statLabel}>Active</Text>
         </Card>
         <Card style={styles.statCard}>
-          <Text style={styles.statNumber}>{amenities.filter(a => !a.isActive).length}</Text>
+          <Text style={styles.statNumber}>
+            {amenities.filter(a => !a.isActive).length}
+          </Text>
           <Text style={styles.statLabel}>Maintenance</Text>
         </Card>
       </View>
@@ -334,6 +443,18 @@ const AmenityManagementScreen = () => {
         showsVerticalScrollIndicator={false}
       />
 
+      {/* Form Modal */}
+      <AmenityFormModal
+        visible={formModalVisible}
+        onClose={() => {
+          setFormModalVisible(false);
+          setEditingAmenity(null);
+        }}
+        onSubmit={handleFormSubmit}
+        amenity={editingAmenity}
+        loading={formLoading}
+      />
+
       {/* Maintenance Modal */}
       {renderMaintenanceModal()}
     </View>
@@ -349,11 +470,10 @@ const styles = StyleSheet.create({
     padding: SPACING.md,
     backgroundColor: COLORS.surface,
     borderBottomWidth: 1,
-    borderBottomColor: COLORS.background,
+    borderBottomColor: COLORS.border,
   },
   createButton: {
-    alignSelf: 'flex-end',
-    minWidth: 120,
+    alignSelf: 'flex-start',
   },
   searchContainer: {
     padding: SPACING.md,
@@ -433,6 +553,8 @@ const styles = StyleSheet.create({
     padding: SPACING.xs,
     borderRadius: 6,
     backgroundColor: 'transparent',
+    flex: 1,
+    justifyContent: 'center',
   },
   actionText: {
     fontSize: FONT_SIZES.xs,
@@ -445,6 +567,9 @@ const styles = StyleSheet.create({
   },
   activateAction: {
     backgroundColor: '#F0FFF4',
+  },
+  deleteAction: {
+    backgroundColor: '#FFEBEE',
   },
   emptyState: {
     alignItems: 'center',
