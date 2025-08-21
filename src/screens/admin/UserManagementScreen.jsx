@@ -9,8 +9,9 @@ import {
   TouchableOpacity,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
-import { apiClient } from '../../services/apiClient'; // ✅ Use real API client
+import { apiClient } from '../../services/apiClient';
 import { UserManagementCard } from '../../components/admin/UserManagementCard';
+import { UserCreationModal } from '../../components/admin/UserCreationModal';
 import { Button } from '../../components/common/Button';
 import { Input } from '../../components/common/Input';
 import { LoadingSpinner } from '../../components/common/LoadingSpinner';
@@ -24,6 +25,7 @@ const UserManagementScreen = () => {
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedFilter, setSelectedFilter] = useState('all');
+  const [createModalVisible, setCreateModalVisible] = useState(false);
 
   useEffect(() => {
     fetchUsers();
@@ -37,7 +39,6 @@ const UserManagementScreen = () => {
     try {
       setLoading(true);
       
-      // ✅ FIXED: Use real API call instead of mock data
       const response = await apiClient.get('/api/auth/users');
       const userData = response.data.data.users || [];
       setUsers(userData);
@@ -86,19 +87,82 @@ const UserManagementScreen = () => {
   };
 
   const handleCreateUser = () => {
-    Alert.alert(
-      'Create User',
-      'User creation feature will be implemented in a future update.',
-      [{ text: 'OK' }]
-    );
+    setCreateModalVisible(true);
+  };
+
+  const handleUserCreated = (newUser) => {
+    setUsers(prev => [newUser, ...prev]);
+    Alert.alert('Success', `User "${newUser.username}" created successfully!`);
   };
 
   const handleEditUser = (user) => {
     Alert.alert(
       'Edit User',
-      `Edit functionality for ${user.username} will be implemented in a future update.`,
-      [{ text: 'OK' }]
+      'User editing functionality',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Edit Username',
+          onPress: () => promptEditUsername(user)
+        },
+        {
+          text: 'Change Role',
+          onPress: () => promptChangeRole(user)
+        }
+      ]
     );
+  };
+
+  const promptEditUsername = (user) => {
+    Alert.prompt(
+      'Edit Username',
+      `Enter new username for ${user.username}:`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Update',
+          onPress: async (newUsername) => {
+            if (newUsername && newUsername.trim()) {
+              await updateUser(user.id, { username: newUsername.trim().toLowerCase() });
+            }
+          }
+        }
+      ],
+      'plain-text',
+      user.username
+    );
+  };
+
+  const promptChangeRole = (user) => {
+    const newRole = user.role === 'admin' ? 'resident' : 'admin';
+    Alert.alert(
+      'Change Role',
+      `Change ${user.username} from ${user.role} to ${newRole}?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Change Role',
+          onPress: () => updateUser(user.id, { role: newRole })
+        }
+      ]
+    );
+  };
+
+  const updateUser = async (userId, updates) => {
+    try {
+      const response = await apiClient.put(`/api/auth/users/${userId}`, updates);
+      
+      if (response.data.success) {
+        setUsers(prev => prev.map(user => 
+          user.id === userId ? { ...user, ...updates } : user
+        ));
+        Alert.alert('Success', 'User updated successfully');
+      }
+    } catch (error) {
+      console.error('Error updating user:', error);
+      const errorMessage = error.response?.data?.message || 'Failed to update user';
+      Alert.alert('Error', errorMessage);
+    }
   };
 
   const handleActivateUser = async (user) => {
@@ -111,10 +175,11 @@ const UserManagementScreen = () => {
           text: 'Activate',
           onPress: async () => {
             try {
-              // ✅ FUTURE: When you implement this endpoint
-              Alert.alert('Info', 'User activation will be implemented in a future update');
-              // await apiClient.patch(`/api/auth/users/${user.id}/activate`);
-              // await fetchUsers(); // Refresh data
+              await apiClient.post(`/api/auth/users/${user.id}/activate`);
+              setUsers(prev => prev.map(u => 
+                u.id === user.id ? { ...u, isActive: true } : u
+              ));
+              Alert.alert('Success', 'User activated successfully');
             } catch (error) {
               console.error('Error activating user:', error);
               Alert.alert('Error', 'Failed to activate user');
@@ -128,7 +193,7 @@ const UserManagementScreen = () => {
   const handleDeactivateUser = async (user) => {
     Alert.alert(
       'Deactivate User',
-      `Are you sure you want to deactivate ${user.username}? They will no longer be able to make reservations.`,
+      `Are you sure you want to deactivate ${user.username}?\n\nThey will no longer be able to make reservations.`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -136,10 +201,11 @@ const UserManagementScreen = () => {
           style: 'destructive',
           onPress: async () => {
             try {
-              // ✅ FIXED: Use real API call (this endpoint exists in your backend)
               await apiClient.delete(`/api/auth/users/${user.id}`);
+              setUsers(prev => prev.map(u => 
+                u.id === user.id ? { ...u, isActive: false } : u
+              ));
               Alert.alert('Success', 'User deactivated successfully');
-              await fetchUsers(); // Refresh data
             } catch (error) {
               console.error('Error deactivating user:', error);
               Alert.alert('Error', 'Failed to deactivate user');
@@ -153,9 +219,87 @@ const UserManagementScreen = () => {
   const handleViewUserReservations = (user) => {
     Alert.alert(
       'User Reservations',
-      `View reservations for ${user.username} will be implemented in a future update.`,
-      [{ text: 'OK' }]
+      `View reservations for ${user.username}`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'View Reservations',
+          onPress: async () => {
+            try {
+              const response = await apiClient.get(`/api/auth/users/${user.id}/reservations`);
+              const reservations = response.data.data.reservations || [];
+              
+              if (reservations.length === 0) {
+                Alert.alert('No Reservations', `${user.username} has no reservations.`);
+              } else {
+                const reservationSummary = reservations
+                  .slice(0, 5)
+                  .map(r => `• ${r.amenityName} - ${new Date(r.startTime).toLocaleDateString()}`)
+                  .join('\n');
+                
+                Alert.alert(
+                  'Recent Reservations',
+                  `${user.username} has ${reservations.length} reservation(s):\n\n${reservationSummary}${reservations.length > 5 ? '\n\n... and more' : ''}`
+                );
+              }
+            } catch (error) {
+              console.error('Error fetching user reservations:', error);
+              Alert.alert('Error', 'Failed to fetch user reservations');
+            }
+          }
+        }
+      ]
     );
+  };
+
+  const handleBulkCreateUsers = () => {
+    Alert.prompt(
+      'Bulk Create Apartment Users',
+      'Enter apartment numbers separated by commas (e.g., 101,102,103):',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Create',
+          onPress: async (apartmentNumbers) => {
+            if (apartmentNumbers) {
+              const numbers = apartmentNumbers
+                .split(',')
+                .map(n => n.trim())
+                .filter(n => n && !isNaN(n));
+              
+              if (numbers.length > 0) {
+                await bulkCreateUsers(numbers);
+              } else {
+                Alert.alert('Error', 'Please enter valid apartment numbers');
+              }
+            }
+          }
+        }
+      ],
+      'plain-text',
+      '101,102,103'
+    );
+  };
+
+  const bulkCreateUsers = async (apartmentNumbers) => {
+    try {
+      const response = await apiClient.post('/api/auth/users/bulk-create', {
+        apartmentNumbers,
+        defaultPassword: 'Resident123!'
+      });
+      
+      if (response.data.success) {
+        const newUsers = response.data.data.users;
+        setUsers(prev => [...newUsers, ...prev]);
+        Alert.alert(
+          'Success',
+          `Created ${newUsers.length} apartment users with default password "Resident123!"`
+        );
+      }
+    } catch (error) {
+      console.error('Error bulk creating users:', error);
+      Alert.alert('Error', 'Failed to create apartment users');
+    }
   };
 
   const filters = [
@@ -221,14 +365,23 @@ const UserManagementScreen = () => {
 
   return (
     <View style={styles.container}>
-      {/* Header with Create Button */}
+      {/* Header with Create Buttons */}
       <View style={styles.header}>
-        <Button
-          title="Create User"
-          onPress={handleCreateUser}
-          leftIcon="person-add"
-          style={styles.createButton}
-        />
+        <View style={styles.headerButtons}>
+          <Button
+            title="Create User"
+            onPress={handleCreateUser}
+            leftIcon="person-add"
+            style={styles.createButton}
+          />
+          <Button
+            title="Bulk Create"
+            onPress={handleBulkCreateUsers}
+            leftIcon="group-add"
+            variant="outline"
+            style={styles.bulkButton}
+          />
+        </View>
       </View>
 
       {/* Search and Filters */}
@@ -278,6 +431,13 @@ const UserManagementScreen = () => {
         ListEmptyComponent={renderEmptyState}
         showsVerticalScrollIndicator={false}
       />
+
+      {/* User Creation Modal */}
+      <UserCreationModal
+        visible={createModalVisible}
+        onClose={() => setCreateModalVisible(false)}
+        onUserCreated={handleUserCreated}
+      />
     </View>
   );
 };
@@ -293,9 +453,17 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: COLORS.background,
   },
+  headerButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
   createButton: {
-    alignSelf: 'flex-end',
-    minWidth: 120,
+    flex: 1,
+    marginRight: SPACING.sm,
+  },
+  bulkButton: {
+    flex: 1,
+    marginLeft: SPACING.sm,
   },
   searchContainer: {
     padding: SPACING.md,

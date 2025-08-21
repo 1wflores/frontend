@@ -38,6 +38,22 @@ export const UserManagementCard = ({
     return user.role === 'admin' ? COLORS.primary : COLORS.secondary;
   };
 
+  const formatDate = (dateString) => {
+    try {
+      return DateUtils.formatDate(dateString);
+    } catch (error) {
+      return new Date(dateString).toLocaleDateString();
+    }
+  };
+
+  const formatDateTime = (dateString) => {
+    try {
+      return DateUtils.formatDateTime(dateString);
+    } catch (error) {
+      return new Date(dateString).toLocaleString();
+    }
+  };
+
   const cardStyles = [styles.container];
   if (disabled) {
     cardStyles.push(styles.disabled);
@@ -57,7 +73,7 @@ export const UserManagementCard = ({
           
           <View style={styles.userDetails}>
             <Text style={styles.apartmentNumber}>
-              {user.role === 'admin' ? 'Administrator' : `Apartment ${apartmentNumber}`}
+              {user.role === 'admin' ? 'Administrator' : `Apartment ${apartmentNumber || 'N/A'}`}
             </Text>
             <Text style={styles.username}>{user.username}</Text>
             <View style={styles.roleContainer}>
@@ -90,16 +106,16 @@ export const UserManagementCard = ({
           <Icon name="calendar-today" size={16} color={COLORS.text.secondary} />
           <Text style={styles.metadataLabel}>Created:</Text>
           <Text style={styles.metadataValue}>
-            {DateUtils.formatDate(user.createdAt)}
+            {formatDate(user.createdAt)}
           </Text>
         </View>
 
-        {user.lastLogin && (
+        {user.lastLoginAt && (
           <View style={styles.metadataRow}>
             <Icon name="login" size={16} color={COLORS.text.secondary} />
             <Text style={styles.metadataLabel}>Last Login:</Text>
             <Text style={styles.metadataValue}>
-              {DateUtils.formatDateTime(user.lastLogin)}
+              {formatDateTime(user.lastLoginAt)}
             </Text>
           </View>
         )}
@@ -108,7 +124,7 @@ export const UserManagementCard = ({
           <Icon name="update" size={16} color={COLORS.text.secondary} />
           <Text style={styles.metadataLabel}>Updated:</Text>
           <Text style={styles.metadataValue}>
-            {DateUtils.formatDateTime(user.updatedAt)}
+            {formatDateTime(user.updatedAt)}
           </Text>
         </View>
       </View>
@@ -214,6 +230,10 @@ const styles = StyleSheet.create({
   statusContainer: {
     flexDirection: 'row',
     alignItems: 'center',
+    backgroundColor: COLORS.background,
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: SPACING.xs,
+    borderRadius: 16,
   },
   statusText: {
     fontSize: FONT_SIZES.xs,
@@ -255,6 +275,8 @@ const styles = StyleSheet.create({
     padding: SPACING.xs,
     borderRadius: 6,
     backgroundColor: 'transparent',
+    minWidth: 80,
+    justifyContent: 'center',
   },
   actionText: {
     fontSize: FONT_SIZES.xs,
@@ -263,13 +285,13 @@ const styles = StyleSheet.create({
     marginLeft: SPACING.xs / 2,
   },
   dangerAction: {
-    backgroundColor: '#FFF5F5',
+    backgroundColor: COLORS.error + '10',
   },
   dangerText: {
     color: COLORS.error,
   },
   successAction: {
-    backgroundColor: '#F0FFF4',
+    backgroundColor: COLORS.success + '10',
   },
   successText: {
     color: COLORS.success,
