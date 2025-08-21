@@ -1,7 +1,9 @@
+// MainTabs.jsx - Fixed with dynamic translations
 import React from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { useAuth } from '../hooks/useAuth';
+import { useLanguage } from '../contexts/LanguageContext'; // ✅ ADDED: Language support
 import { COLORS } from '../utils/constants';
 
 // Import screens
@@ -15,6 +17,7 @@ const Tab = createBottomTabNavigator();
 
 export const MainTabs = () => {
   const { user } = useAuth();
+  const { t } = useLanguage(); // ✅ ADDED: Language hook
 
   // ✅ FIXED: Simple boolean check without useMemo to prevent infinite loops
   if (user?.role === 'admin') {
@@ -69,22 +72,22 @@ export const MainTabs = () => {
       <Tab.Screen 
         name="Dashboard" 
         component={DashboardScreen}
-        options={{ title: 'Home' }}
+        options={{ title: t('home') }} // ✅ FIXED: Dynamic translation
       />
       <Tab.Screen 
         name="Reservations" 
         component={ReservationsScreen}
-        options={{ title: 'My Bookings' }}
+        options={{ title: t('reservations') }} // ✅ FIXED: Dynamic translation
       />
       <Tab.Screen 
         name="Amenities" 
         component={AmenitiesScreen}
-        options={{ title: 'Book Amenities' }}
+        options={{ title: t('amenities') }} // ✅ FIXED: Dynamic translation
       />
       <Tab.Screen 
         name="Profile" 
         component={ProfileScreen}
-        options={{ title: 'Profile' }}
+        options={{ title: t('profile') }} // ✅ FIXED: Dynamic translation
       />
     </Tab.Navigator>
   );

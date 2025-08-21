@@ -4,71 +4,69 @@ import {
   Text,
   StyleSheet,
   ScrollView,
-  Alert,
   TouchableOpacity,
+  Alert,
 } from 'react-native';
-import { useRoute, useNavigation } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { Calendar } from 'react-native-calendars';
+import { Card } from '../../components/common/Card';
+import { Button } from '../../components/common/Button';
+import { Input } from '../../components/common/Input';
+import { LoadingSpinner } from '../../components/common/LoadingSpinner';
+import { useLanguage } from '../../contexts/LanguageContext'; // ✅ ADDED: Language support
+import { ApiErrorTranslator } from '../../utils/apiErrorTranslator'; // ✅ ADDED: Error translation
+import { Localization } from '../../utils/localization'; // ✅ ADDED: Data translation
 import { useAuth } from '../../hooks/useAuth';
 import { useAmenities } from '../../hooks/useAmenities';
 import { useReservations } from '../../hooks/useReservations';
-import { Button } from '../../components/common/Button';
-import { Input } from '../../components/common/Input';
-import { Card } from '../../components/common/Card';
-import { TimeSlotPicker } from '../../components/reservation/TimeSlotPicker';
-import { LoadingSpinner } from '../../components/common/LoadingSpinner';
 import { DateUtils } from '../../utils/dateUtils';
 import { ValidationUtils } from '../../utils/validationUtils';
 import { COLORS, SPACING, FONT_SIZES } from '../../utils/constants';
 
-export const AmenityBookingScreen = () => {
-  const route = useRoute();
-  const navigation = useNavigation();
+const AmenityBookingScreen = ({ route, navigation }) => {
   const { amenityId } = route.params;
+  const { language, t } = useLanguage(); // ✅ ADDED: Language hook
   const { user } = useAuth();
-  
   const { getAmenityById } = useAmenities();
-  const { createReservation, getAvailableSlots, reservations } = useReservations();
-  
+  const { reservations, createReservation, getAvailableSlots } = useReservations();
+
   const [amenity, setAmenity] = useState(null);
-  const [selectedDate, setSelectedDate] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [step, setStep] = useState(1); // 1: Date, 2: Time, 3: Details, 4: Confirm
+  const [selectedDate, setSelectedDate] = useState(null);
   const [availableSlots, setAvailableSlots] = useState([]);
   const [selectedSlot, setSelectedSlot] = useState(null);
+  const [showTimeSlots, setShowTimeSlots] = useState(false);
+  
+  // Form data
   const [visitorCount, setVisitorCount] = useState('');
   const [grillUsage, setGrillUsage] = useState(false);
   const [notes, setNotes] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [step, setStep] = useState(1);
-  const [showTimeSlots, setShowTimeSlots] = useState(false);
 
   useEffect(() => {
-    loadAmenity();
+    loadAmenityDetails();
   }, [amenityId]);
 
   useEffect(() => {
-    if (selectedDate && amenity) {
+    if (selectedDate) {
       loadAvailableSlots();
     }
-  }, [selectedDate, amenity]);
+  }, [selectedDate]);
 
-  const loadAmenity = async () => {
+  const loadAmenityDetails = async () => {
     try {
       setLoading(true);
       const amenityData = await getAmenityById(amenityId);
-      if (!amenityData) {
-        Alert.alert('Error', 'Amenity not found');
-        navigation.goBack();
-        return;
-      }
 
-      // Check if admin can book this amenity
-      if (user?.role === 'admin' && amenityData.type !== 'maintenance') {
+      // ✅ FIXED: Admin validation with translations
+      if (user?.role === 'admin') {
         Alert.alert(
-          'Access Restricted',
-          'Administrators can only make maintenance reservations. Regular amenity bookings are restricted for admin users.',
+          language === 'es' ? 'Acceso Denegado' : 'Access Denied',
+          language === 'es' 
+            ? 'Las reservas regulares de amenidades están restringidas para usuarios administradores.'
+            : 'Regular amenity bookings are restricted for admin users.',
           [
-            { text: 'OK', onPress: () => navigation.goBack() }
+            { text: t('ok'), onPress: () => navigation.goBack() }
           ]
         );
         return;
@@ -76,7 +74,9 @@ export const AmenityBookingScreen = () => {
 
       setAmenity(amenityData);
     } catch (error) {
-      Alert.alert('Error', 'Failed to load amenity details');
+      // ✅ FIXED: Error translation
+      const errorMessage = ApiErrorTranslator.extractAndTranslateError(error, language);
+      Alert.alert(t('error'), errorMessage);
       navigation.goBack();
     } finally {
       setLoading(false);
@@ -105,7 +105,9 @@ export const AmenityBookingScreen = () => {
 
       setAvailableSlots(enhancedSlots);
     } catch (error) {
-      Alert.alert('Error', error.message);
+      // ✅ FIXED: Error translation
+      const errorMessage = ApiErrorTranslator.extractAndTranslateError(error, language);
+      Alert.alert(t('error'), errorMessage);
       setAvailableSlots([]);
     }
   };
@@ -115,20 +117,22 @@ export const AmenityBookingScreen = () => {
     const selectedDateObj = new Date(day.dateString);
     
     if (day.dateString < today) {
-      Alert.alert('Invalid Date', 'Please select a future date');
+      Alert.alert(t('invalidDate'), t('selectFutureDate'));
       return;
     }
     
-    // Check 24-hour advance booking for lounge
+    // ✅ FIXED: 24-hour advance booking validation with translations
     if (amenity?.type === 'lounge') {
       const now = new Date();
       const twentyFourHoursFromNow = new Date(now.getTime() + 24 * 60 * 60 * 1000);
       
       if (selectedDateObj < twentyFourHoursFromNow) {
         Alert.alert(
-          'Invalid Date', 
-          'Lounge reservations must be made at least 24 hours in advance. Please select a date that is at least 24 hours from now.',
-          [{ text: 'OK' }]
+          t('invalidDate'),
+          language === 'es' 
+            ? 'Las reservas del salón deben hacerse con al menos 24 horas de anticipación. Por favor seleccione una fecha que sea al menos 24 horas desde ahora.'
+            : 'Lounge reservations must be made at least 24 hours in advance. Please select a date that is at least 24 hours from now.',
+          [{ text: t('ok') }]
         );
         return;
       }
@@ -149,7 +153,10 @@ export const AmenityBookingScreen = () => {
     // Admin validation
     const adminValidation = ValidationUtils.validateAdminReservation(user, amenity?.type);
     if (!adminValidation.isValid) {
-      Alert.alert('Access Denied', adminValidation.error);
+      Alert.alert(
+        language === 'es' ? 'Acceso Denegado' : 'Access Denied', 
+        ApiErrorTranslator.translateError(adminValidation.error, language)
+      );
       return false;
     }
 
@@ -165,7 +172,10 @@ export const AmenityBookingScreen = () => {
       );
       
       if (!timeValidation.isValid) {
-        Alert.alert('Invalid Time', timeValidation.error);
+        Alert.alert(
+          language === 'es' ? 'Hora Inválida' : 'Invalid Time', 
+          ApiErrorTranslator.translateError(timeValidation.error, language)
+        );
         return false;
       }
     }
@@ -174,7 +184,10 @@ export const AmenityBookingScreen = () => {
       const count = parseInt(visitorCount);
       const validation = ValidationUtils.validateVisitorCount(count, amenity.capacity);
       if (!validation.isValid) {
-        Alert.alert('Invalid Input', validation.error);
+        Alert.alert(
+          t('invalidInput'), 
+          ApiErrorTranslator.translateError(validation.error, language)
+        );
         return false;
       }
     }
@@ -200,43 +213,50 @@ export const AmenityBookingScreen = () => {
       setLoading(true);
       const reservation = await createReservation(reservationData);
       
-      // More accurate success message
+      // ✅ FIXED: Success message with translations
       const isAutoApproved = selectedSlot.autoApproval;
       
       Alert.alert(
-        'Success!',
+        t('success'),
         isAutoApproved 
-          ? 'Your reservation has been confirmed!'
-          : 'Your reservation has been submitted for admin approval. This is because you have another reservation for this amenity on the same date.',
+          ? t('reservationConfirmed')
+          : t('reservationSubmitted'),
         [
           {
-            text: 'OK',
+            text: t('ok'),
             onPress: () => {
-              navigation.navigate('BookingConfirmation', { 
-                reservationId: reservation.id 
+              navigation.navigate('BookingConfirmation', {
+                reservationId: reservation.id,
               });
             },
           },
         ]
       );
     } catch (error) {
-      Alert.alert('Error', error.message);
+      // ✅ FIXED: Error translation
+      const errorMessage = ApiErrorTranslator.extractAndTranslateError(error, language);
+      Alert.alert(t('error'), errorMessage);
     } finally {
       setLoading(false);
     }
   };
 
+  // ✅ FIXED: Get translated amenity name
+  const getTranslatedAmenityName = () => {
+    return Localization.translateAmenity(amenity?.name, language);
+  };
+
   const renderStepIndicator = () => (
     <View style={styles.stepIndicator}>
       {[1, 2, 3, 4].map((stepNumber) => (
-        <View key={stepNumber} style={styles.stepIndicatorContainer}>
+        <View key={stepNumber} style={styles.stepContainer}>
           <View style={[
-            styles.stepDot,
-            step >= stepNumber && styles.activeStepDot,
-            step > stepNumber && styles.completedStepDot,
+            styles.stepCircle,
+            step >= stepNumber && styles.activeStep,
+            step > stepNumber && styles.completedStep,
           ]}>
             {step > stepNumber ? (
-              <Icon name="check" size={16} color={COLORS.text.inverse} />
+              <Icon name="check" size={16} color={COLORS.white} />
             ) : (
               <Text style={[
                 styles.stepNumber,
@@ -249,7 +269,7 @@ export const AmenityBookingScreen = () => {
           {stepNumber < 4 && (
             <View style={[
               styles.stepLine,
-              step > stepNumber && styles.activeStepLine,
+              step > stepNumber && styles.completedStepLine,
             ]} />
           )}
         </View>
@@ -258,290 +278,327 @@ export const AmenityBookingScreen = () => {
   );
 
   const renderDateSelection = () => (
-    <Card style={styles.stepContainer}>
-      <Text style={styles.stepTitle}>Select Date</Text>
+    <Card style={styles.stepCard}>
+      {/* ✅ FIXED: Step title with translations */}
+      <Text style={styles.stepTitle}>{t('selectDate')}</Text>
       <Text style={styles.stepSubtitle}>
-        Choose when you'd like to use {amenity?.name}
-        {amenity?.type === 'lounge' && (
-          <Text style={styles.loungeWarning}>
-            {'\n'}⚠️ Lounge requires 24-hour advance booking
-          </Text>
-        )}
+        {t('chooseWhenToUse')} {getTranslatedAmenityName()}
       </Text>
       
+      {/* ✅ FIXED: Lounge warning with translations */}
+      {amenity?.type === 'lounge' && (
+        <View style={styles.warningCard}>
+          <Icon name="schedule" size={20} color={COLORS.warning} />
+          <Text style={styles.warningText}>
+            {language === 'es' 
+              ? 'El salón requiere reserva con 24 horas de anticipación'
+              : 'Lounge requires 24-hour advance booking'
+            }
+          </Text>
+        </View>
+      )}
+
       <Calendar
         onDayPress={handleDateSelect}
-        minDate={DateUtils.getDateString(new Date())}
         markedDates={{
-          ...(selectedDate && {
-            [selectedDate]: { selected: true, selectedColor: COLORS.primary }
-          })
+          [selectedDate]: {
+            selected: true,
+            selectedColor: COLORS.primary,
+          },
         }}
+        minDate={DateUtils.getDateString(new Date())}
         theme={{
-          backgroundColor: COLORS.surface,
-          calendarBackground: COLORS.surface,
-          textSectionTitleColor: COLORS.primary,
           selectedDayBackgroundColor: COLORS.primary,
-          selectedDayTextColor: COLORS.text.inverse,
           todayTextColor: COLORS.primary,
-          dayTextColor: COLORS.text.primary,
-          textDisabledColor: COLORS.text.secondary,
-          monthTextColor: COLORS.text.primary,
-          textDayFontSize: FONT_SIZES.md,
-          textMonthFontSize: FONT_SIZES.lg,
-          textDayHeaderFontSize: FONT_SIZES.sm,
+          arrowColor: COLORS.primary,
         }}
       />
     </Card>
   );
 
   const renderTimeSelection = () => (
-    <Card style={styles.stepContainer}>
-      <Text style={styles.stepTitle}>Select Time</Text>
+    <Card style={styles.stepCard}>
+      {/* ✅ FIXED: Step title with translations */}
+      <Text style={styles.stepTitle}>{t('selectTime')}</Text>
       <Text style={styles.stepSubtitle}>
-        Available slots for {DateUtils.formatDate(selectedDate)}
+        {t('availableSlotsFor')} {DateUtils.formatDate(selectedDate, language)}
       </Text>
-      
-      {selectedSlot ? (
-        <View style={styles.selectedTimeContainer}>
-          <View style={styles.selectedTimeHeader}>
-            <Icon name="access-time" size={24} color={COLORS.success} />
-            <Text style={styles.selectedTimeTitle}>Selected Time</Text>
-          </View>
-          
-          <Text style={styles.selectedTimeText}>
-            {DateUtils.formatTime(selectedSlot.startTime)} - {DateUtils.formatTime(selectedSlot.endTime)}
+
+      {availableSlots.length === 0 ? (
+        <View style={styles.emptySlots}>
+          <Icon name="event-busy" size={48} color={COLORS.text.secondary} />
+          <Text style={styles.emptySlotsText}>
+            {language === 'es' 
+              ? 'No hay horarios disponibles para esta fecha'
+              : 'No available time slots for this date'
+            }
           </Text>
-          <Text style={styles.selectedDurationText}>
-            {selectedSlot.duration} minutes • {selectedSlot.autoApproval ? 'Auto-approved' : 'Requires approval'}
-          </Text>
-          
           <Button
-            title="Change Time"
+            title={t('back')}
             variant="outline"
-            size="small"
-            onPress={() => setShowTimeSlots(true)}
-            style={styles.changeTimeButton}
+            onPress={() => setStep(1)}
+            style={styles.backButton}
           />
         </View>
       ) : (
-        <Button
-          title="Choose Time Slot"
-          onPress={() => setShowTimeSlots(true)}
-          fullWidth
-        />
+        <>
+          <View style={styles.slotsContainer}>
+            {availableSlots.map((slot, index) => (
+              <TouchableOpacity
+                key={index}
+                style={[
+                  styles.slotButton,
+                  selectedSlot?.startTime === slot.startTime && styles.selectedSlot,
+                ]}
+                onPress={() => handleSlotSelect(slot)}
+              >
+                <Text style={[
+                  styles.slotTime,
+                  selectedSlot?.startTime === slot.startTime && styles.selectedSlotTime,
+                ]}>
+                  {DateUtils.formatTime(slot.startTime)}
+                </Text>
+                <Text style={[
+                  styles.slotDuration,
+                  selectedSlot?.startTime === slot.startTime && styles.selectedSlotDuration,
+                ]}>
+                  {Math.round(slot.duration / 60)} {language === 'es' ? 'min' : 'min'}
+                </Text>
+                {slot.autoApproval && (
+                  <View style={styles.autoApprovalBadge}>
+                    <Text style={styles.autoApprovalText}>
+                      {language === 'es' ? 'Auto' : 'Auto'}
+                    </Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          <View style={styles.stepActions}>
+            <Button
+              title={t('back')}
+              variant="outline"
+              onPress={() => setStep(1)}
+              style={styles.stepButton}
+            />
+          </View>
+        </>
       )}
-      
-      <View style={styles.stepActions}>
-        <Button
-          title="Back"
-          variant="outline"
-          onPress={() => setStep(1)}
-          style={styles.backButton}
-        />
-        
-        {selectedSlot && (
-          <Button
-            title="Continue"
-            onPress={() => setStep(3)}
-            style={styles.nextButton}
-          />
-        )}
-      </View>
-      
-      <TimeSlotPicker
-        visible={showTimeSlots}
-        slots={availableSlots}
-        onSelect={handleSlotSelect}
-        onClose={() => setShowTimeSlots(false)}
-        amenityName={amenity?.name}
-        date={selectedDate}
-      />
     </Card>
   );
 
   const renderDetailsForm = () => (
-    <Card style={styles.stepContainer}>
-      <Text style={styles.stepTitle}>Additional Details</Text>
-      <Text style={styles.stepSubtitle}>Add any special requirements</Text>
+    <Card style={styles.stepCard}>
+      {/* ✅ FIXED: Step title with translations */}
+      <Text style={styles.stepTitle}>{t('additionalDetails')}</Text>
       
+      {selectedSlot && (
+        <View style={styles.selectedTimeContainer}>
+          <Icon name="schedule" size={20} color={COLORS.primary} />
+          <View style={styles.selectedTimeContent}>
+            {/* ✅ FIXED: Selected time with translations */}
+            <Text style={styles.selectedTimeLabel}>{t('selectedTime')}</Text>
+            <Text style={styles.selectedTimeText}>
+              {DateUtils.formatTime(selectedSlot.startTime)} - {DateUtils.formatTime(selectedSlot.endTime)}
+            </Text>
+            <Text style={styles.selectedDurationText}>
+              {DateUtils.formatDate(selectedDate, language)} • {Math.round((new Date(selectedSlot.endTime) - new Date(selectedSlot.startTime)) / (1000 * 60))} {t('minutes')}
+            </Text>
+          </View>
+          <Button
+            title={t('changeTime')}
+            variant="outline"
+            size="small"
+            onPress={() => setStep(2)}
+            style={styles.changeTimeButton}
+          />
+        </View>
+      )}
+
+      {/* ✅ FIXED: Visitor count input with translations */}
       {amenity?.type === 'lounge' && (
-        <>
+        <View style={styles.formSection}>
           <Input
-            label="Number of Visitors"
-            placeholder="How many people will attend?"
+            label={t('numberOfVisitors')}
+            placeholder="0"
             value={visitorCount}
             onChangeText={setVisitorCount}
             keyboardType="numeric"
-            leftIcon="group"
+            leftIcon="people"
           />
-          
-          <TouchableOpacity
-            style={styles.checkboxContainer}
-            onPress={() => setGrillUsage(!grillUsage)}
-          >
-            <Icon
-              name={grillUsage ? 'check-box' : 'check-box-outline-blank'}
-              size={24}
-              color={COLORS.primary}
-            />
-            <View style={styles.checkboxContent}>
-              <Text style={styles.checkboxLabel}>Grill Usage</Text>
-              <Text style={styles.checkboxSubtext}>
-                Additional ${amenity?.specialRequirements?.depositAmount || 50} deposit required
-              </Text>
-            </View>
-          </TouchableOpacity>
-        </>
+          <Text style={styles.helpText}>
+            {t('howManyPeople')}
+          </Text>
+        </View>
       )}
-      
-      <Input
-        label="Special Notes (Optional)"
-        placeholder="Any special requests or notes"
-        value={notes}
-        onChangeText={setNotes}
-        multiline
-        numberOfLines={3}
-        leftIcon="note-add"
-      />
-      
+
+      {/* ✅ FIXED: Grill usage checkbox with translations */}
+      {amenity?.type === 'lounge' && (
+        <TouchableOpacity
+          style={styles.checkboxContainer}
+          onPress={() => setGrillUsage(!grillUsage)}
+        >
+          <Icon 
+            name={grillUsage ? 'check-box' : 'check-box-outline-blank'} 
+            size={24} 
+            color={grillUsage ? COLORS.primary : COLORS.text.secondary} 
+          />
+          <View style={styles.checkboxContent}>
+            <Text style={styles.checkboxLabel}>{t('grillUsage')}</Text>
+            <Text style={styles.checkboxSubtext}>
+              {language === 'es' 
+                ? 'Incluye uso de la parrilla comunitaria (depósito requerido)'
+                : 'Includes use of community grill (deposit required)'
+              }
+            </Text>
+          </View>
+        </TouchableOpacity>
+      )}
+
+      {/* ✅ FIXED: Special notes input with translations */}
+      <View style={styles.formSection}>
+        <Input
+          label={t('specialNotes')}
+          placeholder={t('anySpecialRequests')}
+          value={notes}
+          onChangeText={setNotes}
+          multiline
+          numberOfLines={3}
+          leftIcon="comment"
+        />
+      </View>
+
       <View style={styles.stepActions}>
         <Button
-          title="Back"
+          title={t('back')}
           variant="outline"
           onPress={() => setStep(2)}
-          style={styles.backButton}
+          style={styles.stepButton}
         />
         <Button
-          title="Review"
+          title={t('continue')}
           onPress={() => setStep(4)}
-          style={styles.nextButton}
+          style={styles.stepButton}
         />
       </View>
     </Card>
   );
 
-  const renderConfirmation = () => {
-    if (!selectedSlot || !amenity) return null;
+  const renderConfirmation = () => (
+    <Card style={styles.confirmationCard}>
+      {/* ✅ FIXED: Confirmation header with translations */}
+      <View style={styles.confirmationHeader}>
+        <Icon name="event" size={24} color={COLORS.primary} />
+        <Text style={styles.amenityTitle}>
+          {getTranslatedAmenityName()}
+        </Text>
+      </View>
 
-    const depositRequired = amenity.specialRequirements?.requiresDeposit && grillUsage;
-
-    return (
-      <Card style={styles.stepContainer}>
-        <Text style={styles.stepTitle}>Confirm Reservation</Text>
-        <Text style={styles.stepSubtitle}>Please review your booking details</Text>
-        
-        <Card style={styles.confirmationCard}>
-          <View style={styles.confirmationHeader}>
-            <Icon name="place" size={24} color={COLORS.primary} />
-            <Text style={styles.amenityTitle}>{amenity.name}</Text>
-          </View>
-          
-          <View style={styles.confirmationDetails}>
-            <View style={styles.detailRow}>
-              <Icon name="calendar-today" size={20} color={COLORS.text.secondary} />
-              <Text style={styles.detailLabel}>Date</Text>
-              <Text style={styles.detailValue}>
-                {DateUtils.formatDate(selectedSlot.startTime)}
-              </Text>
-            </View>
-            
-            <View style={styles.detailRow}>
-              <Icon name="access-time" size={20} color={COLORS.text.secondary} />
-              <Text style={styles.detailLabel}>Time</Text>
-              <Text style={styles.detailValue}>
-                {DateUtils.formatTime(selectedSlot.startTime)} - {DateUtils.formatTime(selectedSlot.endTime)}
-              </Text>
-            </View>
-            
-            <View style={styles.detailRow}>
-              <Icon name="timer" size={20} color={COLORS.text.secondary} />
-              <Text style={styles.detailLabel}>Duration</Text>
-              <Text style={styles.detailValue}>
-                {selectedSlot.duration} minutes
-              </Text>
-            </View>
-            
-            {visitorCount && (
-              <View style={styles.detailRow}>
-                <Icon name="group" size={20} color={COLORS.text.secondary} />
-                <Text style={styles.detailLabel}>Visitors</Text>
-                <Text style={styles.detailValue}>{visitorCount}</Text>
-              </View>
-            )}
-            
-            {grillUsage && (
-              <View style={styles.detailRow}>
-                <Icon name="outdoor-grill" size={20} color={COLORS.text.secondary} />
-                <Text style={styles.detailLabel}>Grill Usage</Text>
-                <Text style={styles.detailValue}>Yes</Text>
-              </View>
-            )}
-            
-            {notes && (
-              <View style={styles.notesContainer}>
-                <Text style={styles.notesLabel}>Notes:</Text>
-                <Text style={styles.notesText}>{notes}</Text>
-              </View>
-            )}
-          </View>
-          
-          {depositRequired && (
-            <View style={styles.depositNotice}>
-              <Icon name="account-balance-wallet" size={20} color={COLORS.warning} />
-              <Text style={styles.depositText}>
-                ${amenity.specialRequirements?.depositAmount} deposit required for grill usage
-              </Text>
-            </View>
-          )}
-          
-          {!selectedSlot.autoApproval && (
-            <View style={styles.approvalNotice}>
-              <Icon name="info" size={20} color={COLORS.primary} />
-              <Text style={styles.approvalNoticeText}>
-                This reservation requires admin approval because you have another booking for this amenity on the same date.
-              </Text>
-            </View>
-          )}
-        </Card>
-        
-        <View style={styles.stepActions}>
-          <Button
-            title="Back"
-            variant="outline"
-            onPress={() => setStep(3)}
-            style={styles.backButton}
-          />
-          <Button
-            title="Confirm Booking"
-            onPress={handleCreateReservation}
-            loading={loading}
-            style={styles.confirmButton}
-          />
+      <View style={styles.confirmationDetails}>
+        {/* ✅ FIXED: All detail rows with translations */}
+        <View style={styles.detailRow}>
+          <Icon name="calendar-today" size={16} color={COLORS.text.secondary} />
+          <Text style={styles.detailLabel}>{t('date')}</Text>
+          <Text style={styles.detailValue}>
+            {DateUtils.formatDate(selectedDate, language)}
+          </Text>
         </View>
-      </Card>
-    );
-  };
+
+        <View style={styles.detailRow}>
+          <Icon name="schedule" size={16} color={COLORS.text.secondary} />
+          <Text style={styles.detailLabel}>{t('time')}</Text>
+          <Text style={styles.detailValue}>
+            {DateUtils.formatTime(selectedSlot.startTime)} - {DateUtils.formatTime(selectedSlot.endTime)}
+          </Text>
+        </View>
+
+        <View style={styles.detailRow}>
+          <Icon name="timer" size={16} color={COLORS.text.secondary} />
+          <Text style={styles.detailLabel}>{t('duration')}</Text>
+          <Text style={styles.detailValue}>
+            {Math.round((new Date(selectedSlot.endTime) - new Date(selectedSlot.startTime)) / (1000 * 60))} {t('minutes')}
+          </Text>
+        </View>
+
+        {visitorCount && (
+          <View style={styles.detailRow}>
+            <Icon name="people" size={16} color={COLORS.text.secondary} />
+            <Text style={styles.detailLabel}>{t('visitors')}</Text>
+            <Text style={styles.detailValue}>
+              {visitorCount} {parseInt(visitorCount) === 1 ? 
+                Localization.translateCommon('guest', language) : 
+                Localization.translateCommon('guests', language)
+              }
+            </Text>
+          </View>
+        )}
+
+        {grillUsage && (
+          <View style={styles.detailRow}>
+            <Icon name="outdoor-grill" size={16} color={COLORS.text.secondary} />
+            <Text style={styles.detailLabel}>{t('grillUsage')}</Text>
+            <Text style={styles.detailValue}>{t('included')}</Text>
+          </View>
+        )}
+
+        {notes && (
+          <View style={styles.detailRow}>
+            <Icon name="comment" size={16} color={COLORS.text.secondary} />
+            <Text style={styles.detailLabel}>{t('specialNotes')}</Text>
+            <Text style={styles.detailValue}>{notes}</Text>
+          </View>
+        )}
+      </View>
+
+      {/* ✅ FIXED: Approval status with translations */}
+      <View style={[
+        styles.approvalStatus,
+        selectedSlot?.autoApproval ? styles.autoApprovalStatus : styles.needsApprovalStatus,
+      ]}>
+        <Icon 
+          name={selectedSlot?.autoApproval ? 'check-circle' : 'schedule'} 
+          size={20} 
+          color={selectedSlot?.autoApproval ? COLORS.success : COLORS.warning} 
+        />
+        <Text style={[
+          styles.approvalText,
+          { color: selectedSlot?.autoApproval ? COLORS.success : COLORS.warning }
+        ]}>
+          {selectedSlot?.autoApproval ? t('autoApproved') : t('needsApproval')}
+        </Text>
+      </View>
+
+      <View style={styles.stepActions}>
+        <Button
+          title={t('back')}
+          variant="outline"
+          onPress={() => setStep(3)}
+          style={styles.stepButton}
+        />
+        <Button
+          title={t('confirmBooking')}
+          onPress={handleCreateReservation}
+          loading={loading}
+          style={styles.stepButton}
+        />
+      </View>
+    </Card>
+  );
 
   if (loading && !amenity) {
-    return <LoadingSpinner message="Loading amenity details..." />;
-  }
-
-  if (!amenity) {
-    return null;
+    return <LoadingSpinner message={t('loading')} />;
   }
 
   return (
-    <View style={styles.container}>
+    <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
       {renderStepIndicator()}
       
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        {step === 1 && renderDateSelection()}
-        {step === 2 && renderTimeSelection()}
-        {step === 3 && renderDetailsForm()}
-        {step === 4 && renderConfirmation()}
-      </ScrollView>
-    </View>
+      {step === 1 && renderDateSelection()}
+      {step === 2 && renderTimeSelection()}
+      {step === 3 && renderDetailsForm()}
+      {step === 4 && renderConfirmation()}
+    </ScrollView>
   );
 };
 
@@ -556,52 +613,47 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: SPACING.lg,
     backgroundColor: COLORS.surface,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.background,
   },
-  stepIndicatorContainer: {
+  stepContainer: {
     flexDirection: 'row',
     alignItems: 'center',
   },
-  stepDot: {
+  stepCircle: {
     width: 32,
     height: 32,
     borderRadius: 16,
     backgroundColor: COLORS.background,
+    borderWidth: 2,
+    borderColor: COLORS.border,
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 2,
-    borderColor: COLORS.text.secondary,
   },
-  activeStepDot: {
-    backgroundColor: COLORS.primary,
+  activeStep: {
     borderColor: COLORS.primary,
+    backgroundColor: COLORS.primary,
   },
-  completedStepDot: {
+  completedStep: {
     backgroundColor: COLORS.success,
     borderColor: COLORS.success,
   },
   stepNumber: {
     fontSize: FONT_SIZES.sm,
-    fontWeight: '600',
+    fontWeight: 'bold',
     color: COLORS.text.secondary,
   },
   activeStepNumber: {
-    color: COLORS.text.inverse,
+    color: COLORS.white,
   },
   stepLine: {
     width: 40,
     height: 2,
-    backgroundColor: COLORS.text.secondary,
+    backgroundColor: COLORS.border,
     marginHorizontal: SPACING.xs,
   },
-  activeStepLine: {
+  completedStepLine: {
     backgroundColor: COLORS.success,
   },
-  content: {
-    flex: 1,
-  },
-  stepContainer: {
+  stepCard: {
     margin: SPACING.md,
   },
   stepTitle: {
@@ -615,27 +667,101 @@ const styles = StyleSheet.create({
     color: COLORS.text.secondary,
     marginBottom: SPACING.lg,
   },
-  loungeWarning: {
-    fontSize: FONT_SIZES.sm,
-    color: COLORS.warning,
-    fontWeight: '600',
-  },
-  selectedTimeContainer: {
-    backgroundColor: COLORS.background,
-    borderRadius: 12,
-    padding: SPACING.md,
-    marginBottom: SPACING.md,
-  },
-  selectedTimeHeader: {
+  warningCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: SPACING.sm,
+    backgroundColor: '#FFF8E1',
+    padding: SPACING.md,
+    borderRadius: 8,
+    marginBottom: SPACING.lg,
+    borderLeftWidth: 4,
+    borderLeftColor: COLORS.warning,
   },
-  selectedTimeTitle: {
-    fontSize: FONT_SIZES.md,
+  warningText: {
+    flex: 1,
+    fontSize: FONT_SIZES.sm,
+    color: COLORS.warning,
+    marginLeft: SPACING.sm,
     fontWeight: '600',
-    color: COLORS.success,
-    marginLeft: SPACING.xs,
+  },
+  emptySlots: {
+    alignItems: 'center',
+    padding: SPACING.xl,
+  },
+  emptySlotsText: {
+    fontSize: FONT_SIZES.md,
+    color: COLORS.text.secondary,
+    textAlign: 'center',
+    marginTop: SPACING.md,
+    marginBottom: SPACING.lg,
+  },
+  slotsContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: SPACING.sm,
+    marginBottom: SPACING.lg,
+  },
+  slotButton: {
+    flex: 1,
+    minWidth: '45%',
+    padding: SPACING.md,
+    backgroundColor: COLORS.background,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    alignItems: 'center',
+    position: 'relative',
+  },
+  selectedSlot: {
+    backgroundColor: COLORS.primary,
+    borderColor: COLORS.primary,
+  },
+  slotTime: {
+    fontSize: FONT_SIZES.md,
+    fontWeight: 'bold',
+    color: COLORS.text.primary,
+  },
+  selectedSlotTime: {
+    color: COLORS.white,
+  },
+  slotDuration: {
+    fontSize: FONT_SIZES.sm,
+    color: COLORS.text.secondary,
+    marginTop: SPACING.xs / 2,
+  },
+  selectedSlotDuration: {
+    color: COLORS.white,
+  },
+  autoApprovalBadge: {
+    position: 'absolute',
+    top: 4,
+    right: 4,
+    backgroundColor: COLORS.success,
+    borderRadius: 8,
+    paddingHorizontal: 4,
+    paddingVertical: 2,
+  },
+  autoApprovalText: {
+    fontSize: FONT_SIZES.xs,
+    color: COLORS.white,
+    fontWeight: 'bold',
+  },
+  selectedTimeContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.background,
+    padding: SPACING.md,
+    borderRadius: 8,
+    marginBottom: SPACING.lg,
+  },
+  selectedTimeContent: {
+    flex: 1,
+    marginLeft: SPACING.sm,
+  },
+  selectedTimeLabel: {
+    fontSize: FONT_SIZES.sm,
+    color: COLORS.text.secondary,
+    fontWeight: '600',
   },
   selectedTimeText: {
     fontSize: FONT_SIZES.lg,
@@ -646,10 +772,17 @@ const styles = StyleSheet.create({
   selectedDurationText: {
     fontSize: FONT_SIZES.sm,
     color: COLORS.text.secondary,
-    marginBottom: SPACING.sm,
   },
   changeTimeButton: {
     alignSelf: 'flex-start',
+  },
+  formSection: {
+    marginBottom: SPACING.lg,
+  },
+  helpText: {
+    fontSize: FONT_SIZES.sm,
+    color: COLORS.text.secondary,
+    marginTop: SPACING.xs,
   },
   checkboxContainer: {
     flexDirection: 'row',
@@ -676,7 +809,7 @@ const styles = StyleSheet.create({
     color: COLORS.text.secondary,
   },
   confirmationCard: {
-    marginBottom: SPACING.lg,
+    margin: SPACING.md,
   },
   confirmationHeader: {
     flexDirection: 'row',
@@ -704,73 +837,47 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: FONT_SIZES.sm,
     color: COLORS.text.secondary,
-    marginLeft: SPACING.sm,
+    marginLeft: SPACING.xs,
   },
   detailValue: {
     fontSize: FONT_SIZES.sm,
     fontWeight: '600',
     color: COLORS.text.primary,
   },
-  notesContainer: {
-    marginTop: SPACING.sm,
-    padding: SPACING.sm,
-    backgroundColor: COLORS.background,
-    borderRadius: 8,
-  },
-  notesLabel: {
-    fontSize: FONT_SIZES.xs,
-    fontWeight: '600',
-    color: COLORS.text.secondary,
-    marginBottom: SPACING.xs / 2,
-  },
-  notesText: {
-    fontSize: FONT_SIZES.sm,
-    color: COLORS.text.primary,
-  },
-  depositNotice: {
+  approvalStatus: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FFF8E1',
-    padding: SPACING.sm,
+    padding: SPACING.md,
     borderRadius: 8,
-    marginBottom: SPACING.sm,
+    marginBottom: SPACING.lg,
   },
-  depositText: {
+  autoApprovalStatus: {
+    backgroundColor: '#F0FFF4',
+    borderWidth: 1,
+    borderColor: COLORS.success,
+  },
+  needsApprovalStatus: {
+    backgroundColor: '#FFF8E1',
+    borderWidth: 1,
+    borderColor: COLORS.warning,
+  },
+  approvalText: {
     fontSize: FONT_SIZES.sm,
-    color: COLORS.warning,
     fontWeight: '600',
     marginLeft: SPACING.xs,
-    flex: 1,
-  },
-  approvalNotice: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    backgroundColor: '#F8F9FF',
-    padding: SPACING.sm,
-    borderRadius: 8,
-    borderLeftWidth: 4,
-    borderLeftColor: COLORS.primary,
-  },
-  approvalNoticeText: {
-    fontSize: FONT_SIZES.sm,
-    color: COLORS.primary,
-    marginLeft: SPACING.xs,
-    flex: 1,
-    lineHeight: 20,
   },
   stepActions: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     marginTop: SPACING.lg,
   },
+  stepButton: {
+    flex: 1,
+    marginHorizontal: SPACING.xs,
+  },
   backButton: {
-    flex: 0.4,
-  },
-  nextButton: {
-    flex: 0.4,
-  },
-  confirmButton: {
-    flex: 0.4,
+    alignSelf: 'center',
+    minWidth: 100,
   },
 });
 

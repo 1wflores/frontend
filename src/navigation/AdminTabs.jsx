@@ -1,6 +1,8 @@
+// AdminTabs.jsx - Fixed with dynamic translations  
 import React from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import Icon from 'react-native-vector-icons/MaterialIcons';
+import { useLanguage } from '../contexts/LanguageContext'; // ✅ ADDED: Language support
 import { COLORS } from '../utils/constants';
 
 // Import admin screens
@@ -12,8 +14,9 @@ import ProfileScreen from '../screens/main/ProfileScreen';
 
 const Tab = createBottomTabNavigator();
 
-// 🔥 SIMPLIFIED: Admin-only navigation without nested stacks
 export const AdminTabs = () => {
+  const { language, t } = useLanguage(); // ✅ ADDED: Language hook
+
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
@@ -64,27 +67,29 @@ export const AdminTabs = () => {
       <Tab.Screen 
         name="AdminDashboard" 
         component={AdminDashboardScreen}
-        options={{ title: 'Dashboard' }}
+        options={{ title: t('dashboard') }} // ✅ FIXED: Dynamic translation
       />
       <Tab.Screen 
         name="Reservations" 
         component={ReservationManagementScreen}
-        options={{ title: 'Reservations' }}
+        options={{ title: t('reservations') }} // ✅ FIXED: Dynamic translation
       />
       <Tab.Screen 
         name="Users" 
         component={UserManagementScreen}
-        options={{ title: 'Users' }}
+        options={{ 
+          title: language === 'es' ? 'Usuarios' : 'Users' // ✅ FIXED: Dynamic translation
+        }}
       />
       <Tab.Screen 
         name="Amenities" 
         component={AmenityManagementScreen}
-        options={{ title: 'Amenities' }}
+        options={{ title: t('amenities') }} // ✅ FIXED: Dynamic translation
       />
       <Tab.Screen 
         name="Profile" 
         component={ProfileScreen}
-        options={{ title: 'Profile' }}
+        options={{ title: t('profile') }} // ✅ FIXED: Dynamic translation
       />
     </Tab.Navigator>
   );

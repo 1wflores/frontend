@@ -12,11 +12,15 @@ import Icon from 'react-native-vector-icons/MaterialIcons';
 import { Input } from '../common/Input';
 import { Button } from '../common/Button';
 import { Card } from '../common/Card';
+import { useLanguage } from '../../contexts/LanguageContext'; // ✅ ADDED: Language support
+import { ApiErrorTranslator } from '../../utils/apiErrorTranslator'; // ✅ ADDED: Error translation
 import { apiClient } from '../../services/apiClient';
 import { ValidationUtils } from '../../utils/validationUtils';
 import { COLORS, SPACING, FONT_SIZES } from '../../utils/constants';
 
 export const UserCreationModal = ({ visible, onClose, onUserCreated }) => {
+  const { language, t } = useLanguage(); // ✅ ADDED: Language hook
+  
   const [formData, setFormData] = useState({
     username: '',
     password: '',
@@ -46,24 +50,31 @@ export const UserCreationModal = ({ visible, onClose, onUserCreated }) => {
   const validateForm = () => {
     const newErrors = {};
 
-    // Username validation
+    // ✅ FIXED: Username validation with translations
     if (!formData.username.trim()) {
-      newErrors.username = 'Username is required';
+      newErrors.username = t('fieldRequired');
     } else if (formData.role === 'resident' && !formData.username.match(/^apartment\d+$/i)) {
-      newErrors.username = 'Resident username must be in format: apartment + number (e.g., apartment204)';
+      newErrors.username = language === 'es' 
+        ? 'El nombre de usuario del residente debe tener el formato: apartment + número (ej: apartment204)'
+        : 'Resident username must be in format: apartment + number (e.g., apartment204)';
     } else if (formData.username.length < 3) {
-      newErrors.username = 'Username must be at least 3 characters';
+      newErrors.username = language === 'es' 
+        ? 'El nombre de usuario debe tener al menos 3 caracteres'
+        : 'Username must be at least 3 characters';
     }
 
-    // Password validation
+    // ✅ FIXED: Password validation with translations
     const passwordValidation = ValidationUtils.validatePassword(formData.password);
     if (!passwordValidation.isValid) {
-      newErrors.password = passwordValidation.error;
+      // Translate password validation errors
+      newErrors.password = ApiErrorTranslator.translateError(passwordValidation.error, language);
     }
 
-    // Confirm password validation
+    // ✅ FIXED: Confirm password validation with translations
     if (formData.password !== formData.confirmPassword) {
-      newErrors.confirmPassword = 'Passwords do not match';
+      newErrors.confirmPassword = language === 'es' 
+        ? 'Las contraseñas no coinciden'
+        : 'Passwords do not match';
     }
 
     setErrors(newErrors);
@@ -85,12 +96,15 @@ export const UserCreationModal = ({ visible, onClose, onUserCreated }) => {
       const response = await apiClient.post('/api/auth/users', userData);
 
       if (response.data.success) {
+        // ✅ FIXED: Success alert with translations
         Alert.alert(
-          'Success',
-          `User "${userData.username}" created successfully!`,
+          t('success'),
+          language === 'es' 
+            ? `Usuario "${userData.username}" creado exitosamente!`
+            : `User "${userData.username}" created successfully!`,
           [
             {
-              text: 'OK',
+              text: t('ok'),
               onPress: () => {
                 onUserCreated(response.data.data.user);
                 handleClose();
@@ -102,8 +116,9 @@ export const UserCreationModal = ({ visible, onClose, onUserCreated }) => {
     } catch (error) {
       console.error('Create user error:', error);
       
-      const errorMessage = error.response?.data?.message || 'Failed to create user';
-      Alert.alert('Error', errorMessage);
+      // ✅ FIXED: Error translation
+      const errorMessage = ApiErrorTranslator.extractAndTranslateError(error, language);
+      Alert.alert(t('error'), errorMessage);
     } finally {
       setLoading(false);
     }
@@ -138,9 +153,18 @@ export const UserCreationModal = ({ visible, onClose, onUserCreated }) => {
     }
   };
 
+  // ✅ FIXED: Role options with translations
   const roleOptions = [
-    { value: 'resident', label: 'Resident', icon: 'home' },
-    { value: 'admin', label: 'Administrator', icon: 'admin-panel-settings' }
+    { 
+      value: 'resident', 
+      label: language === 'es' ? 'Residente' : 'Resident', 
+      icon: 'home' 
+    },
+    { 
+      value: 'admin', 
+      label: language === 'es' ? 'Administrador' : 'Administrator', 
+      icon: 'admin_panel_settings' 
+    }
   ];
 
   return (
@@ -151,21 +175,23 @@ export const UserCreationModal = ({ visible, onClose, onUserCreated }) => {
       onRequestClose={handleClose}
     >
       <View style={styles.container}>
-        {/* Header */}
+        {/* ✅ FIXED: Header with translations */}
         <View style={styles.header}>
           <TouchableOpacity onPress={handleClose} style={styles.closeButton}>
             <Icon name="close" size={24} color={COLORS.text.primary} />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Create New User</Text>
+          <Text style={styles.headerTitle}>
+            {language === 'es' ? 'Crear Nuevo Usuario' : 'Create New User'}
+          </Text>
           <View style={styles.placeholder} />
         </View>
 
         <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
           <Card style={styles.formCard}>
-            {/* Username Input */}
+            {/* ✅ FIXED: Username Input with translations */}
             <Input
-              label="Username"
-              placeholder="Enter username"
+              label={language === 'es' ? 'Nombre de Usuario' : 'Username'}
+              placeholder={language === 'es' ? 'Ingrese nombre de usuario' : 'Enter username'}
               value={formData.username}
               onChangeText={(value) => handleInputChange('username', value)}
               error={errors.username}
@@ -174,8 +200,10 @@ export const UserCreationModal = ({ visible, onClose, onUserCreated }) => {
               leftIcon="person"
             />
 
-            {/* Role Selection */}
-            <Text style={styles.sectionLabel}>User Role</Text>
+            {/* ✅ FIXED: Role Selection with translations */}
+            <Text style={styles.sectionLabel}>
+              {language === 'es' ? 'Rol de Usuario' : 'User Role'}
+            </Text>
             <View style={styles.roleContainer}>
               {roleOptions.map((option) => (
                 <TouchableOpacity
@@ -203,21 +231,24 @@ export const UserCreationModal = ({ visible, onClose, onUserCreated }) => {
               ))}
             </View>
 
-            {/* Username Format Helper */}
+            {/* ✅ FIXED: Username Format Helper with translations */}
             {formData.role === 'resident' && (
               <View style={styles.helperContainer}>
                 <Icon name="info" size={16} color={COLORS.text.secondary} />
                 <Text style={styles.helperText}>
-                  Resident usernames must be in format: apartment + number (e.g., apartment204)
+                  {language === 'es' 
+                    ? 'Los nombres de usuario de residentes deben tener el formato: apartment + número (ej: apartment204)'
+                    : 'Resident usernames must be in format: apartment + number (e.g., apartment204)'
+                  }
                 </Text>
               </View>
             )}
 
-            {/* Password Input */}
+            {/* ✅ FIXED: Password Input with translations */}
             <View style={styles.passwordSection}>
               <Input
-                label="Password"
-                placeholder="Enter password"
+                label={t('password')}
+                placeholder={language === 'es' ? 'Ingrese contraseña' : 'Enter password'}
                 value={formData.password}
                 onChangeText={(value) => handleInputChange('password', value)}
                 error={errors.password}
@@ -228,19 +259,19 @@ export const UserCreationModal = ({ visible, onClose, onUserCreated }) => {
               />
               
               <Button
-                title="Generate Strong Password"
+                title={language === 'es' ? 'Generar Contraseña Segura' : 'Generate Strong Password'}
                 onPress={generateStrongPassword}
                 variant="outline"
                 size="small"
-                leftIcon="auto-fix-high"
+                leftIcon="auto_fix_high"
                 style={styles.generateButton}
               />
             </View>
 
-            {/* Confirm Password Input */}
+            {/* ✅ FIXED: Confirm Password Input with translations */}
             <Input
-              label="Confirm Password"
-              placeholder="Confirm password"
+              label={language === 'es' ? 'Confirmar Contraseña' : 'Confirm Password'}
+              placeholder={language === 'es' ? 'Confirme contraseña' : 'Confirm password'}
               value={formData.confirmPassword}
               onChangeText={(value) => handleInputChange('confirmPassword', value)}
               error={errors.confirmPassword}
@@ -248,31 +279,50 @@ export const UserCreationModal = ({ visible, onClose, onUserCreated }) => {
               leftIcon="lock"
             />
 
-            {/* Password Requirements */}
+            {/* ✅ FIXED: Password Requirements with translations */}
             <View style={styles.requirementsContainer}>
-              <Text style={styles.requirementsTitle}>Password Requirements:</Text>
-              <Text style={styles.requirementText}>• At least 8 characters</Text>
-              <Text style={styles.requirementText}>• Include uppercase and lowercase letters</Text>
-              <Text style={styles.requirementText}>• Include at least one number</Text>
-              <Text style={styles.requirementText}>• Include at least one special character</Text>
+              <Text style={styles.requirementsTitle}>
+                {language === 'es' ? 'Requisitos de Contraseña:' : 'Password Requirements:'}
+              </Text>
+              <Text style={styles.requirementText}>
+                {language === 'es' ? '• Al menos 8 caracteres' : '• At least 8 characters'}
+              </Text>
+              <Text style={styles.requirementText}>
+                {language === 'es' 
+                  ? '• Incluir letras mayúsculas y minúsculas'
+                  : '• Include uppercase and lowercase letters'
+                }
+              </Text>
+              <Text style={styles.requirementText}>
+                {language === 'es' 
+                  ? '• Incluir al menos un número'
+                  : '• Include at least one number'
+                }
+              </Text>
+              <Text style={styles.requirementText}>
+                {language === 'es' 
+                  ? '• Incluir al menos un carácter especial'
+                  : '• Include at least one special character'
+                }
+              </Text>
             </View>
           </Card>
         </ScrollView>
 
-        {/* Footer Buttons */}
+        {/* ✅ FIXED: Footer Buttons with translations */}
         <View style={styles.footer}>
           <Button
-            title="Cancel"
-            onPress={handleClose}
+            title={t('cancel')}
             variant="outline"
+            onPress={handleClose}
             style={styles.footerButton}
+            disabled={loading}
           />
           <Button
-            title="Create User"
+            title={t('create')}
             onPress={handleCreateUser}
-            loading={loading}
             style={styles.footerButton}
-            leftIcon="person-add"
+            loading={loading}
           />
         </View>
       </View>
@@ -290,9 +340,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     padding: SPACING.md,
-    backgroundColor: COLORS.surface,
     borderBottomWidth: 1,
-    borderBottomColor: COLORS.background,
+    borderBottomColor: COLORS.border,
+    backgroundColor: COLORS.surface,
   },
   closeButton: {
     padding: SPACING.xs,
@@ -303,14 +353,14 @@ const styles = StyleSheet.create({
     color: COLORS.text.primary,
   },
   placeholder: {
-    width: 40,
+    width: 32,
   },
   content: {
     flex: 1,
     padding: SPACING.md,
   },
   formCard: {
-    padding: SPACING.lg,
+    marginBottom: SPACING.lg,
   },
   sectionLabel: {
     fontSize: FONT_SIZES.md,

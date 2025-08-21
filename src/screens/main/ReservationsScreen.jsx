@@ -11,17 +11,18 @@ import {
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { useFocusEffect } from '@react-navigation/native';
 import { useLanguage } from '../../contexts/LanguageContext';
-import { useAuth } from '../../hooks/useAuth'; // ✅ NEW: Get user role
+import { useAuth } from '../../hooks/useAuth';
 import { useReservations } from '../../hooks/useReservations';
 import { ReservationCard } from '../../components/reservation/ReservationCard';
 import { Button } from '../../components/common/Button';
 import { LoadingSpinner } from '../../components/common/LoadingSpinner';
+import { ApiErrorTranslator } from '../../utils/apiErrorTranslator'; // ✅ ADDED: Error translation
 import { DateUtils } from '../../utils/dateUtils';
 import { COLORS, SPACING, FONT_SIZES } from '../../utils/constants';
 
-const ReservationsScreen = () => {
+const ReservationsScreen = ({ navigation }) => {
   const { t, language } = useLanguage();
-  const { user } = useAuth(); // ✅ NEW: Get current user
+  const { user } = useAuth();
   const {
     reservations,
     loading,
@@ -30,10 +31,10 @@ const ReservationsScreen = () => {
     cancelReservation,
   } = useReservations();
   
-  const [selectedFilter, setSelectedFilter] = useState('upcoming'); // ✅ CHANGED: Default to upcoming
+  const [selectedFilter, setSelectedFilter] = useState('upcoming');
   const [refreshing, setRefreshing] = useState(false);
 
-  // ✅ NEW: Filter out old reservations for regular users
+  // ✅ ENHANCED: Filter out old reservations for regular users
   const getFilteredReservationsForUser = () => {
     const now = new Date();
     const threeDaysAgo = new Date(now.getTime() - 3 * 24 * 60 * 60 * 1000);
@@ -55,20 +56,20 @@ const ReservationsScreen = () => {
 
   const filteredUserReservations = getFilteredReservationsForUser();
 
-  // ✅ UPDATED: Filters based on user role
+  // ✅ ENHANCED: Filters based on user role with proper translations
   const getFilters = () => {
     if (user?.role === 'admin') {
       // Admin sees all filters including past
       return [
-        { key: 'upcoming', label: language === 'es' ? 'Próximas' : 'Upcoming', count: 0 },
+        { key: 'upcoming', label: t('upcoming'), count: 0 },
         { key: 'pending', label: language === 'es' ? 'Pendientes' : 'Pending', count: 0 },
         { key: 'past', label: language === 'es' ? 'Pasadas' : 'Past', count: 0 },
-        { key: 'all', label: language === 'es' ? 'Todas' : 'All', count: 0 },
+        { key: 'all', label: t('all'), count: 0 },
       ];
     } else {
       // Regular users don't see past filter
       return [
-        { key: 'upcoming', label: language === 'es' ? 'Próximas' : 'Upcoming', count: 0 },
+        { key: 'upcoming', label: t('upcoming'), count: 0 },
         { key: 'pending', label: language === 'es' ? 'Pendientes' : 'Pending', count: 0 },
         { key: 'current', label: language === 'es' ? 'Actuales' : 'Current', count: 0 },
       ];
@@ -151,25 +152,39 @@ const ReservationsScreen = () => {
   };
 
   const handleCancelReservation = async (reservation) => {
+    // ✅ FIXED: Cancellation confirmation with translations
     Alert.alert(
       language === 'es' ? 'Cancelar Reserva' : 'Cancel Reservation',
       language === 'es' ? '¿Está seguro de que desea cancelar esta reserva?' : 'Are you sure you want to cancel this reservation?',
       [
         { text: language === 'es' ? 'No' : 'No', style: 'cancel' },
         {
-          text: language === 'es' ? 'Sí' : 'Yes',
+          text: language === 'es' ? 'Sí, Cancelar' : 'Yes, Cancel',
           style: 'destructive',
           onPress: async () => {
             try {
               await cancelReservation(reservation.id);
-              Alert.alert(t('success'), language === 'es' ? 'Reserva cancelada exitosamente' : 'Reservation cancelled successfully');
+              // ✅ FIXED: Success message translation
+              Alert.alert(
+                t('success'), 
+                language === 'es' ? 'Reserva cancelada exitosamente' : 'Reservation cancelled successfully'
+              );
             } catch (error) {
-              Alert.alert(t('error'), error.message);
+              // ✅ FIXED: Error translation
+              const errorMessage = ApiErrorTranslator.extractAndTranslateError(error, language);
+              Alert.alert(t('error'), errorMessage);
             }
           },
         },
       ]
     );
+  };
+
+  const handleNavigateToAmenities = () => {
+    navigation.reset({
+      index: 0,
+      routes: [{ name: 'MainTabs', params: { screen: 'Amenities' } }],
+    });
   };
 
   const renderFilterButton = (filter) => (
@@ -220,18 +235,16 @@ const ReservationsScreen = () => {
         size={64} 
         color={COLORS.text.secondary} 
       />
+      {/* ✅ FIXED: Empty state with proper translations */}
       <Text style={styles.emptyTitle}>
         {selectedFilter === 'upcoming' 
-          ? (language === 'es' ? 'Sin Próximas Reservas' : 'No Upcoming Reservations')
-          : (language === 'es' ? 'Sin Reservas Coincidentes' : 'No Matching Reservations')
+          ? t('noUpcomingReservationsTitle')
+          : t('noMatchingReservations')
         }
       </Text>
       <Text style={styles.emptyText}>
         {selectedFilter === 'upcoming' 
-          ? (language === 'es' 
-              ? 'No tiene próximas reservas. ¡Reserve una amenidad para empezar!'
-              : 'You have no upcoming reservations. Book an amenity to get started!'
-            )
+          ? t('noUpcomingReservations')
           : (language === 'es' 
               ? `No se encontraron reservas para "${filters.find(f => f.key === selectedFilter)?.label}".`
               : `No reservations found for "${filters.find(f => f.key === selectedFilter)?.label}".`
@@ -241,14 +254,14 @@ const ReservationsScreen = () => {
       {selectedFilter === 'upcoming' && (
         <Button
           title={t('bookAmenity')}
-          onPress={() => {/* Navigate to amenities */}}
+          onPress={handleNavigateToAmenities}
           style={styles.emptyButton}
         />
       )}
     </View>
   );
 
-  // ✅ NEW: Show info about hidden old reservations for regular users
+  // ✅ ENHANCED: Show info about hidden old reservations for regular users
   const renderInfoMessage = () => {
     if (user?.role === 'admin') return null;
 
@@ -256,10 +269,7 @@ const ReservationsScreen = () => {
       <View style={styles.infoMessage}>
         <Icon name="info" size={16} color={COLORS.primary} />
         <Text style={styles.infoText}>
-          {language === 'es' 
-            ? 'Las reservas antiguas se ocultan automáticamente para mantener su lista organizada.'
-            : 'Old reservations are automatically hidden to keep your list organized.'
-          }
+          {t('oldReservationsHidden')}
         </Text>
       </View>
     );
@@ -292,9 +302,12 @@ const ReservationsScreen = () => {
         showsVerticalScrollIndicator={false}
       />
 
+      {/* ✅ FIXED: Error handling with translations */}
       {error && (
         <View style={styles.errorContainer}>
-          <Text style={styles.errorText}>{error}</Text>
+          <Text style={styles.errorText}>
+            {ApiErrorTranslator.translateError(error, language)}
+          </Text>
           <Button
             title={t('retry')}
             variant="outline"
@@ -393,6 +406,7 @@ const styles = StyleSheet.create({
     color: COLORS.text.primary,
     marginTop: SPACING.md,
     marginBottom: SPACING.xs,
+    textAlign: 'center',
   },
   emptyText: {
     fontSize: FONT_SIZES.md,

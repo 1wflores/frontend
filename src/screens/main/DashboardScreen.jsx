@@ -4,39 +4,49 @@ import {
   Text,
   StyleSheet,
   ScrollView,
-  RefreshControl,
   TouchableOpacity,
+  RefreshControl,
   Alert,
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
-import { useAuth } from '../../contexts/AuthContext';
+import { useFocusEffect } from '@react-navigation/native';
 import { useLanguage } from '../../contexts/LanguageContext';
+import { ApiErrorTranslator } from '../../utils/apiErrorTranslator'; // ✅ ADDED: Error translation
+import { Localization } from '../../utils/localization'; // ✅ ADDED: Data translation
+import { useAuth } from '../../hooks/useAuth';
 import { useReservations } from '../../hooks/useReservations';
 import { useAmenities } from '../../hooks/useAmenities';
 import { ReservationCard } from '../../components/reservation/ReservationCard';
-import { Button } from '../../components/common/Button';
-import { Card } from '../../components/common/Card';
+import { AmenityCard } from '../../components/reservation/AmenityCard';
 import { LoadingSpinner } from '../../components/common/LoadingSpinner';
-import { ValidationUtils } from '../../utils/validationUtils';
 import { DateUtils } from '../../utils/dateUtils';
+import { ValidationUtils } from '../../utils/validationUtils';
 import { COLORS, SPACING, FONT_SIZES } from '../../utils/constants';
 
-const DashboardScreen = () => {
-  const navigation = useNavigation();
-  const { user } = useAuth();
+const DashboardScreen = ({ navigation }) => {
   const { t, language } = useLanguage();
-  const { reservations, loading: reservationsLoading, fetchUserReservations } = useReservations();
-  const { amenities, loading: amenitiesLoading, fetchAmenities } = useAmenities();
+  const { user } = useAuth();
+  const { 
+    reservations, 
+    loading: reservationsLoading, 
+    fetchUserReservations,
+    cancelReservation 
+  } = useReservations();
+  const { 
+    amenities, 
+    loading: amenitiesLoading, 
+    fetchAmenities 
+  } = useAmenities();
+
   const [refreshing, setRefreshing] = useState(false);
 
-  // ✅ FIXED: Better apartment number extraction with debug logging
+  // ✅ ENHANCED: Extract apartment number with error handling
   const getApartmentNumber = (userData) => {
-    console.log('🏠 Dashboard getApartmentNumber called with user:', userData);
+    console.log('🏠 Dashboard: Getting apartment number for user:', userData);
     
     if (!userData) {
       console.warn('⚠️ Dashboard: No user data provided');
-      return 'Unknown';
+      return language === 'es' ? 'Desconocido' : 'Unknown';
     }
 
     const result = ValidationUtils.extractApartmentNumber(userData.username);
@@ -86,6 +96,7 @@ const DashboardScreen = () => {
 
   const getQuickStats = () => {
     const pendingReservations = reservations.filter(r => r.status === 'pending');
+    const todayReservations = reservations.filter(r => DateUtils.isToday(r.startTime) && ['approved', 'pending'].includes(r.status));
     const activeAmenities = amenities.filter(a => a.isActive);
     const thisWeekReservations = reservations.filter(r => {
       const startTime = new Date(r.startTime);
@@ -137,6 +148,7 @@ const DashboardScreen = () => {
   };
 
   const handleCancelReservation = async (reservationId) => {
+    // ✅ FIXED: Cancellation confirmation with translations
     Alert.alert(
       t('cancel'),
       language === 'es' ? '¿Está seguro de que desea cancelar esta reserva?' : 'Are you sure you want to cancel this reservation?',
@@ -147,10 +159,17 @@ const DashboardScreen = () => {
           style: 'destructive',
           onPress: async () => {
             try {
+              await cancelReservation(reservationId);
               await fetchUserReservations();
-              Alert.alert(t('success'), language === 'es' ? 'Reserva cancelada exitosamente' : 'Reservation cancelled successfully');
+              // ✅ FIXED: Success message translation
+              Alert.alert(
+                t('success'), 
+                language === 'es' ? 'Reserva cancelada exitosamente' : 'Reservation cancelled successfully'
+              );
             } catch (error) {
-              Alert.alert(t('error'), language === 'es' ? 'Error al cancelar la reserva' : 'Failed to cancel reservation');
+              // ✅ FIXED: Error translation
+              const errorMessage = ApiErrorTranslator.extractAndTranslateError(error, language);
+              Alert.alert(t('error'), errorMessage);
             }
           },
         },
@@ -158,13 +177,9 @@ const DashboardScreen = () => {
     );
   };
 
-  if (reservationsLoading && reservations.length === 0) {
+  if (reservationsLoading && amenitiesLoading) {
     return <LoadingSpinner message={t('loading')} />;
   }
-
-  // ✅ FIXED: Better apartment number display with debug info
-  const apartmentNumber = getApartmentNumber(user);
-  console.log('🏠 Dashboard final apartment number:', apartmentNumber);
 
   return (
     <ScrollView 
@@ -172,14 +187,13 @@ const DashboardScreen = () => {
       refreshControl={
         <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
       }
-      showsVerticalScrollIndicator={false}
     >
-      {/* Welcome Section */}
-      <View style={styles.welcomeSection}>
+      {/* Welcome Header */}
+      <View style={styles.welcomeContainer}>
         <View style={styles.welcomeHeader}>
-          <View>
+          <View style={styles.welcomeContent}>
             <Text style={styles.greeting}>
-              {getGreeting()}, {t('apartment')} {apartmentNumber}!
+              {getGreeting()}, {getApartmentNumber(user)}! 👋
             </Text>
             <Text style={styles.welcomeText}>
               {t('readyToBook')}
@@ -218,7 +232,7 @@ const DashboardScreen = () => {
           style={styles.statCard}
           onPress={handleNavigateToReservations}
         >
-          <Icon name="date-range" size={24} color={COLORS.success} />
+          <Icon name="date_range" size={24} color={COLORS.success} />
           <Text style={styles.statNumber}>{stats.weekCount}</Text>
           <Text style={styles.statLabel}>{t('thisWeek')}</Text>
         </TouchableOpacity>
@@ -253,7 +267,7 @@ const DashboardScreen = () => {
       {/* Quick Book Section */}
       <View style={styles.section}>
         <View style={styles.sectionHeader}>
-          <Icon name="flash-on" size={20} color={COLORS.primary} />
+          <Icon name="flash_on" size={20} color={COLORS.primary} />
           <Text style={styles.sectionTitle}>{t('quickBook')}</Text>
           <TouchableOpacity onPress={handleNavigateToAmenities}>
             <Text style={styles.viewAllText}>{t('viewAll')}</Text>
@@ -261,85 +275,64 @@ const DashboardScreen = () => {
         </View>
         
         {amenities.length > 0 ? (
-          <View style={styles.amenitiesGrid}>
-            {amenities.slice(0, 4).map((amenity) => (
-              <View key={amenity.id} style={styles.amenityGridItem}>
-                <TouchableOpacity
-                  style={styles.quickBookCard}
+          <ScrollView 
+            horizontal 
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.amenitiesScroll}
+          >
+            {amenities.filter(a => a.isActive).slice(0, 5).map((amenity) => (
+              <View key={amenity.id} style={styles.amenityCardContainer}>
+                <AmenityCard
+                  amenity={amenity}
                   onPress={() => handleBookAmenity(amenity.id)}
-                  disabled={!amenity.isActive}
-                >
-                  <Icon 
-                    name={getAmenityIcon(amenity.type)} 
-                    size={32} 
-                    color={amenity.isActive ? COLORS.primary : COLORS.text.secondary} 
-                  />
-                  <Text style={[
-                    styles.quickBookTitle,
-                    !amenity.isActive && styles.disabledText
-                  ]}>
-                    {amenity.name}
-                  </Text>
-                  {!amenity.isActive && (
-                    <Text style={styles.maintenanceText}>{t('maintenance')}</Text>
-                  )}
-                </TouchableOpacity>
+                  compact
+                />
               </View>
             ))}
-          </View>
+          </ScrollView>
         ) : (
-          <Card style={styles.emptyQuickBook}>
+          <View style={styles.emptyAmenities}>
             <Icon name="pool" size={48} color={COLORS.text.secondary} />
             <Text style={styles.emptyText}>
-              {language === 'es' ? 'No hay amenidades disponibles' : 'No amenities available'}
+              {language === 'es' 
+                ? 'No hay amenidades disponibles en este momento'
+                : 'No amenities available at the moment'
+              }
             </Text>
-          </Card>
+          </View>
         )}
       </View>
 
       {/* Upcoming Reservations */}
-      <View style={styles.section}>
-        <View style={styles.sectionHeader}>
-          <Icon name="upcoming" size={20} color={COLORS.primary} />
-          <Text style={styles.sectionTitle}>{t('upcomingReservations')}</Text>
-          <TouchableOpacity onPress={handleNavigateToReservations}>
-            <Text style={styles.viewAllText}>{t('viewAll')}</Text>
-          </TouchableOpacity>
-        </View>
-
-        {upcomingReservations.length > 0 ? (
-          upcomingReservations.map((reservation) => (
+      {upcomingReservations.length > 0 && (
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <Icon name="event" size={20} color={COLORS.primary} />
+            <Text style={styles.sectionTitle}>{t('upcomingReservations')}</Text>
+            <TouchableOpacity onPress={handleNavigateToReservations}>
+              <Text style={styles.viewAllText}>{t('viewAll')}</Text>
+            </TouchableOpacity>
+          </View>
+          
+          {upcomingReservations.map((reservation) => (
             <ReservationCard
               key={reservation.id}
               reservation={reservation}
               onCancel={() => handleCancelReservation(reservation.id)}
-              onViewDetails={() => {/* Navigate to details if implemented */}}
+              onViewDetails={() => {/* Navigate to details */}}
             />
-          ))
-        ) : (
-          <Card style={styles.emptyState}>
-            <Icon name="event-available" size={48} color={COLORS.text.secondary} />
-            <Text style={styles.emptyText}>{t('noUpcomingReservations')}</Text>
-            <Text style={styles.emptySubtext}>
-              {t('bookAmenityToSee')}
-            </Text>
-            <Button
-              title={t('bookAmenity')}
-              variant="outline"
-              onPress={() => handleBookAmenity()}
-              style={styles.emptyButton}
-            />
-          </Card>
-        )}
-      </View>
+          ))}
+        </View>
+      )}
 
-      {/* Recent Activity */}
-      {recentReservations.length > 0 && (
+      {/* Recent Activity - Only show if no upcoming reservations */}
+      {upcomingReservations.length === 0 && recentReservations.length > 0 && (
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Icon name="history" size={20} color={COLORS.primary} />
             <Text style={styles.sectionTitle}>{t('recentActivity')}</Text>
           </View>
+          
           {recentReservations.map((reservation) => (
             <ReservationCard
               key={reservation.id}
@@ -350,75 +343,55 @@ const DashboardScreen = () => {
         </View>
       )}
 
+      {/* Empty State - No reservations at all */}
+      {upcomingReservations.length === 0 && todayReservations.length === 0 && recentReservations.length === 0 && (
+        <View style={styles.section}>
+          <View style={styles.emptyState}>
+            <Icon name="event_note" size={64} color={COLORS.text.secondary} />
+            <Text style={styles.emptyTitle}>
+              {t('noUpcomingReservations')}
+            </Text>
+            <Text style={styles.emptyText}>
+              {t('bookAmenityToSee')}
+            </Text>
+            <TouchableOpacity 
+              style={styles.bookButton}
+              onPress={() => handleBookAmenity()}
+            >
+              <Icon name="add" size={20} color={COLORS.white} />
+              <Text style={styles.bookButtonText}>{t('bookAmenity')}</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+
       {/* Quick Actions */}
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>{t('quickActions')}</Text>
+        <View style={styles.sectionHeader}>
+          <Icon name="flash_on" size={20} color={COLORS.primary} />
+          <Text style={styles.sectionTitle}>{t('quickActions')}</Text>
+        </View>
+        
         <View style={styles.quickActions}>
           <TouchableOpacity 
-            style={styles.quickAction}
-            onPress={handleNavigateToAmenities}
+            style={styles.quickActionCard}
+            onPress={() => handleBookAmenity()}
           >
-            <View style={styles.quickActionIcon}>
-              <Icon name="pool" size={24} color={COLORS.primary} />
-            </View>
+            <Icon name="pool" size={24} color={COLORS.primary} />
             <Text style={styles.quickActionText}>{t('bookAmenity')}</Text>
           </TouchableOpacity>
           
           <TouchableOpacity 
-            style={styles.quickAction}
+            style={styles.quickActionCard}
             onPress={handleNavigateToReservations}
           >
-            <View style={styles.quickActionIcon}>
-              <Icon name="event" size={24} color={COLORS.primary} />
-            </View>
+            <Icon name="event" size={24} color={COLORS.primary} />
             <Text style={styles.quickActionText}>{t('myBookings')}</Text>
-          </TouchableOpacity>
-          
-          <TouchableOpacity 
-            style={styles.quickAction}
-            onPress={handleNavigateToProfile}
-          >
-            <View style={styles.quickActionIcon}>
-              <Icon name="person" size={24} color={COLORS.primary} />
-            </View>
-            <Text style={styles.quickActionText}>{t('profile')}</Text>
           </TouchableOpacity>
         </View>
       </View>
-
-      {/* Tips Section */}
-      <Card style={styles.tipsCard}>
-        <View style={styles.tipsHeader}>
-          <Icon name="lightbulb" size={20} color={COLORS.warning} />
-          <Text style={styles.tipsTitle}>
-            {language === 'es' ? '💡 ¿Sabía que?' : '💡 Did you know?'}
-          </Text>
-        </View>
-        <Text style={styles.tipsText}>
-          {language === 'es' 
-            ? 'Puede reservar amenidades hasta con 7 días de anticipación. Algunas reservas se aprueban automáticamente mientras que otras pueden requerir revisión administrativa para garantizar equidad.'
-            : 'You can book amenities up to 7 days in advance. Some reservations are auto-approved while others may require admin review for fairness.'
-          }
-        </Text>
-      </Card>
     </ScrollView>
   );
-};
-
-// Helper function to get amenity icons
-const getAmenityIcon = (type) => {
-  switch (type) {
-    case 'jacuzzi':
-      return 'hot-tub';
-    case 'cold-tub':
-      return 'ac-unit';
-    case 'yoga-deck':
-      return 'self-improvement';
-    case 'lounge':
-      return 'weekend';
-    default:
-      return 'place';
-  }
 };
 
 const styles = StyleSheet.create({
@@ -426,16 +399,19 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: COLORS.background,
   },
-  welcomeSection: {
+  welcomeContainer: {
     backgroundColor: COLORS.primary,
-    paddingHorizontal: SPACING.lg,
     paddingTop: SPACING.lg,
     paddingBottom: SPACING.xl,
   },
   welcomeHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
+    alignItems: 'center',
+    paddingHorizontal: SPACING.md,
+  },
+  welcomeContent: {
+    flex: 1,
   },
   greeting: {
     fontSize: FONT_SIZES.xl,
@@ -458,16 +434,17 @@ const styles = StyleSheet.create({
   },
   statsContainer: {
     flexDirection: 'row',
-    padding: SPACING.md,
-    marginTop: -SPACING.lg,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.lg,
+    backgroundColor: COLORS.surface,
   },
   statCard: {
     flex: 1,
-    backgroundColor: COLORS.surface,
-    borderRadius: 12,
-    padding: SPACING.md,
-    marginHorizontal: SPACING.xs,
     alignItems: 'center',
+    paddingVertical: SPACING.md,
+    marginHorizontal: SPACING.xs,
+    backgroundColor: COLORS.background,
+    borderRadius: 12,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
@@ -487,12 +464,13 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   section: {
-    padding: SPACING.md,
+    marginBottom: SPACING.lg,
   },
   sectionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: SPACING.md,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.md,
   },
   sectionTitle: {
     fontSize: FONT_SIZES.lg,
@@ -506,123 +484,75 @@ const styles = StyleSheet.create({
     color: COLORS.primary,
     fontWeight: '600',
   },
-  amenitiesGrid: {
+  amenitiesScroll: {
+    paddingHorizontal: SPACING.md,
+  },
+  amenityCardContainer: {
+    width: 200,
+    marginRight: SPACING.md,
+  },
+  emptyAmenities: {
+    alignItems: 'center',
+    paddingVertical: SPACING.xl,
+    paddingHorizontal: SPACING.md,
+  },
+  emptyState: {
+    alignItems: 'center',
+    paddingVertical: SPACING.xl,
+    paddingHorizontal: SPACING.md,
+  },
+  emptyTitle: {
+    fontSize: FONT_SIZES.lg,
+    fontWeight: 'bold',
+    color: COLORS.text.primary,
+    marginTop: SPACING.md,
+    marginBottom: SPACING.xs,
+    textAlign: 'center',
+  },
+  emptyText: {
+    fontSize: FONT_SIZES.md,
+    color: COLORS.text.secondary,
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: SPACING.lg,
+  },
+  bookButton: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    marginHorizontal: -SPACING.xs,
+    alignItems: 'center',
+    backgroundColor: COLORS.primary,
+    paddingHorizontal: SPACING.lg,
+    paddingVertical: SPACING.md,
+    borderRadius: 25,
   },
-  amenityGridItem: {
-    width: '50%',
-    paddingHorizontal: SPACING.xs,
-    marginBottom: SPACING.sm,
+  bookButtonText: {
+    fontSize: FONT_SIZES.md,
+    fontWeight: '600',
+    color: COLORS.white,
+    marginLeft: SPACING.xs,
   },
-  quickBookCard: {
+  quickActions: {
+    flexDirection: 'row',
+    paddingHorizontal: SPACING.md,
+    gap: SPACING.md,
+  },
+  quickActionCard: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: SPACING.lg,
     backgroundColor: COLORS.surface,
     borderRadius: 12,
-    padding: SPACING.md,
-    alignItems: 'center',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 3,
-    minHeight: 100,
-    justifyContent: 'center',
   },
-  quickBookTitle: {
+  quickActionText: {
     fontSize: FONT_SIZES.sm,
     fontWeight: '600',
     color: COLORS.text.primary,
     marginTop: SPACING.xs,
     textAlign: 'center',
-  },
-  disabledText: {
-    color: COLORS.text.secondary,
-  },
-  maintenanceText: {
-    fontSize: FONT_SIZES.xs,
-    color: COLORS.error,
-    marginTop: SPACING.xs / 2,
-  },
-  emptyQuickBook: {
-    alignItems: 'center',
-    padding: SPACING.lg,
-  },
-  emptyState: {
-    alignItems: 'center',
-    padding: SPACING.xl,
-  },
-  emptyText: {
-    fontSize: FONT_SIZES.md,
-    color: COLORS.text.secondary,
-    marginTop: SPACING.md,
-    marginBottom: SPACING.xs,
-    textAlign: 'center',
-  },
-  emptySubtext: {
-    fontSize: FONT_SIZES.sm,
-    color: COLORS.text.secondary,
-    textAlign: 'center',
-    marginBottom: SPACING.lg,
-  },
-  emptyButton: {
-    minWidth: 150,
-  },
-  quickActions: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
-  },
-  quickAction: {
-    alignItems: 'center',
-    padding: SPACING.md,
-    backgroundColor: COLORS.surface,
-    borderRadius: 12,
-    minWidth: '30%',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-    marginBottom: SPACING.sm,
-  },
-  quickActionIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: COLORS.background,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: SPACING.xs,
-  },
-  quickActionText: {
-    fontSize: FONT_SIZES.xs,
-    color: COLORS.text.primary,
-    textAlign: 'center',
-    fontWeight: '600',
-  },
-  tipsCard: {
-    margin: SPACING.md,
-    marginBottom: SPACING.xl,
-    backgroundColor: '#F8F9FF',
-    borderLeftWidth: 4,
-    borderLeftColor: COLORS.warning,
-  },
-  tipsHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: SPACING.sm,
-  },
-  tipsTitle: {
-    fontSize: FONT_SIZES.md,
-    fontWeight: '600',
-    color: COLORS.text.primary,
-    marginLeft: SPACING.xs,
-  },
-  tipsText: {
-    fontSize: FONT_SIZES.sm,
-    color: COLORS.text.secondary,
-    lineHeight: 20,
   },
 });
 
