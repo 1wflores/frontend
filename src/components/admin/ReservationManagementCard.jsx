@@ -7,6 +7,8 @@ import {
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { Card } from '../common/Card';
+import { useLanguage } from '../../contexts/LanguageContext'; // ✅ ADDED: Language support
+import { Localization } from '../../utils/localization'; // ✅ ADDED: Data translation
 import { DateUtils } from '../../utils/dateUtils';
 import { ValidationUtils } from '../../utils/validationUtils';
 import { COLORS, SPACING, FONT_SIZES, STATUS_COLORS } from '../../utils/constants';
@@ -19,6 +21,8 @@ export const ReservationManagementCard = ({
   onCancel,
   disabled = false,
 }) => {
+  const { language, t } = useLanguage(); // ✅ ADDED: Language hook
+
   // FIX: Use the correct field 'username' that comes from backend enrichment
   const apartmentNumber = ValidationUtils.extractApartmentNumber(reservation.username);
   
@@ -43,6 +47,19 @@ export const ReservationManagementCard = ({
     }
   };
 
+  // ✅ ADDED: Status translation
+  const getStatusText = () => {
+    const statusMap = {
+      pending: 'waitingForApproval',
+      approved: 'confirmed',
+      denied: 'notApproved',
+      cancelled: 'cancelled',
+      completed: 'completed',
+    };
+    
+    return t(statusMap[reservation.status]) || Localization.translateStatus(reservation.status, language);
+  };
+
   const getPriorityLevel = () => {
     const now = new Date();
     const startTime = new Date(reservation.startTime);
@@ -62,6 +79,11 @@ export const ReservationManagementCard = ({
     }
   };
 
+  // ✅ ADDED: Translate amenity name
+  const getTranslatedAmenityName = () => {
+    return Localization.translateAmenity(reservation.amenityName || reservation.amenity?.name, language);
+  };
+
   const showActionButtons = reservation.status === 'pending' && (onApprove || onDeny);
 
   const cardStyles = [styles.container];
@@ -72,81 +94,106 @@ export const ReservationManagementCard = ({
   return (
     <Card style={cardStyles}>
       <View style={styles.header}>
-        <View style={styles.reservationInfo}>
-          <Text style={styles.apartmentNumber}>Apartment {apartmentNumber}</Text>
-          {/* FIX: Use amenityName field that already exists from backend */}
-          <Text style={styles.amenityName}>{reservation.amenityName}</Text>
-          <Text style={styles.reservationId}>ID: {reservation.id.slice(0, 8).toUpperCase()}</Text>
-        </View>
-
-        <View style={styles.statusBadge}>
-          <View style={[styles.statusIndicator, { backgroundColor: getStatusColor() }]}>
-            <Icon name={getStatusIcon()} size={16} color="#fff" />
+        <View style={styles.userInfo}>
+          <View style={styles.avatarContainer}>
+            <Icon name="home" size={24} color={COLORS.primary} />
           </View>
+          
+          <View style={styles.details}>
+            <Text style={styles.apartmentNumber}>
+              {apartmentNumber}
+            </Text>
+            <Text style={styles.username}>
+              {reservation.username}
+            </Text>
+          </View>
+        </View>
+
+        <View style={styles.statusContainer}>
+          <Icon 
+            name={getStatusIcon()} 
+            size={16} 
+            color={getStatusColor()} 
+          />
           <Text style={[styles.statusText, { color: getStatusColor() }]}>
-            {reservation.status.toUpperCase()}
-          </Text>
-          {reservation.status === 'pending' && (
-            <View style={[styles.priorityIndicator, { backgroundColor: getPriorityColor() }]} />
-          )}
-        </View>
-      </View>
-
-      <View style={styles.timeInfo}>
-        <View style={styles.timeRow}>
-          <Icon name="calendar-today" size={14} color={COLORS.text.secondary} />
-          <Text style={styles.timeLabel}>Date:</Text>
-          <Text style={styles.timeValue}>
-            {DateUtils.formatDate(reservation.startTime)}
-          </Text>
-        </View>
-
-        <View style={styles.timeRow}>
-          <Icon name="access-time" size={14} color={COLORS.text.secondary} />
-          <Text style={styles.timeLabel}>Time:</Text>
-          <Text style={styles.timeValue}>
-            {DateUtils.formatTime(reservation.startTime)} - {DateUtils.formatTime(reservation.endTime)}
-          </Text>
-        </View>
-
-        <View style={styles.timeRow}>
-          <Icon name="timer" size={14} color={COLORS.text.secondary} />
-          <Text style={styles.timeLabel}>Duration:</Text>
-          <Text style={styles.timeValue}>
-            {DateUtils.getDurationText(reservation.startTime, reservation.endTime)}
+            {getStatusText()}
           </Text>
         </View>
       </View>
 
-      {reservation.specialRequests && Object.keys(reservation.specialRequests).length > 0 && (
-        <View style={styles.specialRequests}>
-          <Text style={styles.specialRequestsTitle}>Special Requests:</Text>
-          {reservation.specialRequests.visitorCount && (
-            <Text style={styles.specialRequestItem}>
-              <Icon name="group" size={12} color={COLORS.text.secondary} /> {reservation.specialRequests.visitorCount} visitors
+      <View style={styles.reservationInfo}>
+        {/* ✅ FIXED: Translate amenity name */}
+        <Text style={styles.amenityName}>
+          {getTranslatedAmenityName()}
+        </Text>
+        
+        <View style={styles.timeInfo}>
+          <View style={styles.timeRow}>
+            <Icon name="event" size={16} color={COLORS.text.secondary} />
+            {/* ✅ FIXED: Date formatting with language */}
+            <Text style={styles.timeLabel}>{t('date')}:</Text>
+            <Text style={styles.timeValue}>
+              {DateUtils.formatDate(reservation.date || reservation.startTime, language)}
             </Text>
-          )}
-          {reservation.specialRequests.grillUsage && (
-            <Text style={styles.specialRequestItem}>
-              <Icon name="outdoor-grill" size={12} color={COLORS.text.secondary} /> Grill usage requested
+          </View>
+          
+          <View style={styles.timeRow}>
+            <Icon name="schedule" size={16} color={COLORS.text.secondary} />
+            {/* ✅ FIXED: Time label translation */}
+            <Text style={styles.timeLabel}>{t('time')}:</Text>
+            <Text style={styles.timeValue}>
+              {DateUtils.formatTime(reservation.startTime)} - {DateUtils.formatTime(reservation.endTime)}
             </Text>
-          )}
-          {reservation.submittedAt && (
-            <Text style={styles.submittedInfo}>
-              Submitted: {DateUtils.formatRelativeTime(reservation.submittedAt)}
-            </Text>
-          )}
+          </View>
         </View>
-      )}
+
+        {/* Special requests */}
+        {(reservation.specialRequests?.visitorCount > 0 || 
+          reservation.specialRequests?.notes ||
+          reservation.specialRequirements?.grillUsage) && (
+          <View style={styles.specialRequests}>
+            {/* ✅ FIXED: Special requests title translation */}
+            <Text style={styles.specialRequestsTitle}>
+              {t('specialRequests')}:
+            </Text>
+            
+            {reservation.specialRequests?.visitorCount > 0 && (
+              <Text style={styles.specialRequestItem}>
+                • {reservation.specialRequests.visitorCount} {
+                  reservation.specialRequests.visitorCount === 1 ? t('visitor') : t('visitors')
+                }
+              </Text>
+            )}
+            
+            {reservation.specialRequirements?.grillUsage && (
+              <Text style={styles.specialRequestItem}>
+                • {t('grillUsage')}
+              </Text>
+            )}
+            
+            {reservation.specialRequests?.notes && (
+              <Text style={styles.specialRequestItem}>
+                • {reservation.specialRequests.notes}
+              </Text>
+            )}
+          </View>
+        )}
+
+        {/* ✅ FIXED: Submitted info translation */}
+        <Text style={styles.submittedInfo}>
+          {t('submittedOn')} {DateUtils.formatDateTime(reservation.createdAt, language)}
+        </Text>
+      </View>
 
       <View style={styles.actions}>
         {onViewDetails && (
           <TouchableOpacity 
             style={styles.detailsButton}
-            onPress={onViewDetails}
+            onPress={() => onViewDetails(reservation)}
             disabled={disabled}
           >
-            <Text style={styles.detailsText}>Details</Text>
+            {/* ✅ FIXED: Details button translation */}
+            <Text style={styles.detailsText}>{t('viewDetails')}</Text>
           </TouchableOpacity>
         )}
 
@@ -155,35 +202,44 @@ export const ReservationManagementCard = ({
             {onApprove && (
               <TouchableOpacity 
                 style={[styles.actionButton, styles.approveButton]}
-                onPress={onApprove}
+                onPress={() => onApprove(reservation)}
                 disabled={disabled}
               >
                 <Icon name="check" size={16} color={COLORS.success} />
-                <Text style={[styles.actionText, styles.approveText]}>Approve</Text>
+                {/* ✅ FIXED: Approve button translation */}
+                <Text style={[styles.actionText, styles.approveText]}>
+                  {t('approve')}
+                </Text>
               </TouchableOpacity>
             )}
 
             {onDeny && (
               <TouchableOpacity 
                 style={[styles.actionButton, styles.denyButton]}
-                onPress={onDeny}
+                onPress={() => onDeny(reservation)}
                 disabled={disabled}
               >
                 <Icon name="close" size={16} color={COLORS.error} />
-                <Text style={[styles.actionText, styles.denyText]}>Deny</Text>
+                {/* ✅ FIXED: Deny button translation */}
+                <Text style={[styles.actionText, styles.denyText]}>
+                  {t('deny')}
+                </Text>
               </TouchableOpacity>
             )}
           </>
         )}
 
-        {reservation.status === 'approved' && DateUtils.isFuture(reservation.startTime) && onCancel && (
+        {reservation.status === 'approved' && onCancel && (
           <TouchableOpacity 
             style={[styles.actionButton, styles.cancelButton]}
-            onPress={onCancel}
+            onPress={() => onCancel(reservation)}
             disabled={disabled}
           >
             <Icon name="cancel" size={16} color={COLORS.error} />
-            <Text style={[styles.actionText, styles.cancelText]}>Cancel</Text>
+            {/* ✅ FIXED: Cancel button translation */}
+            <Text style={[styles.actionText, styles.cancelText]}>
+              {t('cancel')}
+            </Text>
           </TouchableOpacity>
         )}
       </View>
@@ -204,7 +260,20 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     marginBottom: SPACING.md,
   },
-  reservationInfo: {
+  userInfo: {
+    flexDirection: 'row',
+    flex: 1,
+  },
+  avatarContainer: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: COLORS.background,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: SPACING.sm,
+  },
+  details: {
     flex: 1,
   },
   apartmentNumber: {
@@ -213,36 +282,31 @@ const styles = StyleSheet.create({
     color: COLORS.text.primary,
     marginBottom: SPACING.xs / 2,
   },
-  amenityName: {
+  username: {
     fontSize: FONT_SIZES.sm,
     color: COLORS.text.secondary,
-    marginBottom: SPACING.xs / 2,
   },
-  reservationId: {
-    fontSize: FONT_SIZES.xs,
-    color: COLORS.text.secondary,
-    fontFamily: 'monospace',
-  },
-  statusBadge: {
+  statusContainer: {
+    flexDirection: 'row',
     alignItems: 'center',
-  },
-  statusIndicator: {
-    width: 32,
-    height: 32,
+    backgroundColor: COLORS.background,
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: SPACING.xs,
     borderRadius: 16,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: SPACING.xs / 2,
   },
   statusText: {
     fontSize: FONT_SIZES.xs,
     fontWeight: '600',
+    marginLeft: SPACING.xs / 2,
   },
-  priorityIndicator: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    marginTop: SPACING.xs / 2,
+  reservationInfo: {
+    marginBottom: SPACING.md,
+  },
+  amenityName: {
+    fontSize: FONT_SIZES.lg,
+    fontWeight: '600',
+    color: COLORS.text.primary,
+    marginBottom: SPACING.sm,
   },
   timeInfo: {
     backgroundColor: COLORS.background,

@@ -9,6 +9,8 @@ import {
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { Button } from '../common/Button';
+import { useLanguage } from '../../contexts/LanguageContext'; // ✅ ADDED: Language support
+import { Localization } from '../../utils/localization'; // ✅ ADDED: Data translation
 import { DateUtils } from '../../utils/dateUtils';
 import { COLORS, SPACING, FONT_SIZES } from '../../utils/constants';
 
@@ -20,6 +22,18 @@ export const TimeSlotPicker = ({
   amenityName,
   date,
 }) => {
+  const { language, t } = useLanguage(); // ✅ ADDED: Language hook
+
+  // ✅ ADDED: Translate amenity name
+  const getTranslatedAmenityName = () => {
+    return amenityName ? Localization.translateAmenity(amenityName, language) : amenityName;
+  };
+
+  // ✅ ADDED: Duration text translation
+  const getDurationText = (minutes) => {
+    return language === 'es' ? `${minutes} minutos` : `${minutes} minutes`;
+  };
+
   const renderSlot = (slot, index) => (
     <TouchableOpacity
       key={index}
@@ -31,19 +45,25 @@ export const TimeSlotPicker = ({
           {DateUtils.formatTime(slot.startTime)} - {DateUtils.formatTime(slot.endTime)}
         </Text>
         <Text style={componentStyles.slotDuration}>
-          {slot.duration} minutes
+          {getDurationText(slot.duration)}
         </Text>
       </View>
       
       {slot.autoApproval ? (
         <View style={componentStyles.approvalBadge}>
           <Icon name="check-circle" size={16} color={COLORS.success} />
-          <Text style={componentStyles.approvalText}>Auto-approved</Text>
+          {/* ✅ FIXED: Auto-approved text translation */}
+          <Text style={componentStyles.approvalText}>
+            {t('autoApproved') || (language === 'es' ? 'Auto-aprobado' : 'Auto-approved')}
+          </Text>
         </View>
       ) : (
         <View style={componentStyles.pendingBadge}>
           <Icon name="schedule" size={16} color={COLORS.warning} />
-          <Text style={componentStyles.pendingText}>Needs approval</Text>
+          {/* ✅ FIXED: Needs approval text translation */}
+          <Text style={componentStyles.pendingText}>
+            {t('needsApproval') || (language === 'es' ? 'Requiere aprobación' : 'Needs approval')}
+          </Text>
         </View>
       )}
     </TouchableOpacity>
@@ -60,13 +80,18 @@ export const TimeSlotPicker = ({
         <View style={componentStyles.container}>
           <View style={componentStyles.header}>
             <View>
-              <Text style={componentStyles.title}>Select Time Slot</Text>
+              {/* ✅ FIXED: Title translation */}
+              <Text style={componentStyles.title}>
+                {t('selectTimeSlot') || (language === 'es' ? 'Seleccionar Horario' : 'Select Time Slot')}
+              </Text>
               {amenityName && (
-                <Text style={componentStyles.subtitle}>{amenityName}</Text>
+                <Text style={componentStyles.subtitle}>
+                  {getTranslatedAmenityName()}
+                </Text>
               )}
               {date && (
                 <Text style={componentStyles.subtitle}>
-                  {DateUtils.formatDate(date)}
+                  {DateUtils.formatDate(date, language)}
                 </Text>
               )}
             </View>
@@ -81,9 +106,12 @@ export const TimeSlotPicker = ({
             ) : (
               <View style={componentStyles.emptyState}>
                 <Icon name="event-busy" size={48} color={COLORS.text.secondary} />
-                <Text style={componentStyles.emptyText}>No available time slots</Text>
+                {/* ✅ FIXED: Empty state text translation */}
+                <Text style={componentStyles.emptyText}>
+                  {t('noAvailableSlots') || (language === 'es' ? 'No hay horarios disponibles' : 'No available time slots')}
+                </Text>
                 <Text style={componentStyles.emptySubtext}>
-                  Please try a different date
+                  {t('tryDifferentDate') || (language === 'es' ? 'Intenta con una fecha diferente' : 'Please try a different date')}
                 </Text>
               </View>
             )}
@@ -91,7 +119,7 @@ export const TimeSlotPicker = ({
           
           <View style={componentStyles.footer}>
             <Button
-              title="Cancel"
+              title={t('cancel') || (language === 'es' ? 'Cancelar' : 'Cancel')}
               variant="outline"
               onPress={onClose}
               fullWidth

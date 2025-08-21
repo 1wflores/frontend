@@ -7,7 +7,7 @@ import {
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { Card } from '../common/Card';
-import { Button } from '../common/Button';
+import { useLanguage } from '../../contexts/LanguageContext'; // ✅ ADDED: Language support
 import { DateUtils } from '../../utils/dateUtils';
 import { ValidationUtils } from '../../utils/validationUtils';
 import { COLORS, SPACING, FONT_SIZES } from '../../utils/constants';
@@ -15,43 +15,52 @@ import { COLORS, SPACING, FONT_SIZES } from '../../utils/constants';
 export const UserManagementCard = ({
   user,
   onEdit,
-  onDeactivate,
   onActivate,
+  onDeactivate,
   onViewReservations,
   disabled = false,
 }) => {
+  const { language, t } = useLanguage(); // ✅ ADDED: Language hook
+
   const apartmentNumber = ValidationUtils.extractApartmentNumber(user.username);
-  
-  const getUserStatusColor = () => {
-    return user.isActive ? COLORS.success : COLORS.error;
+
+  const getRoleIcon = () => {
+    return user.role === 'admin' ? 'admin-panel-settings' : 'person';
+  };
+
+  const getRoleColor = () => {
+    return user.role === 'admin' ? COLORS.primary : COLORS.info;
+  };
+
+  // ✅ ADDED: Role text translation
+  const getRoleText = () => {
+    return user.role === 'admin' 
+      ? t('administrator') || (language === 'es' ? 'Administrador' : 'Administrator')
+      : t('resident') || (language === 'es' ? 'Residente' : 'Resident');
   };
 
   const getUserStatusIcon = () => {
     return user.isActive ? 'check-circle' : 'cancel';
   };
 
-  const getRoleIcon = () => {
-    return user.role === 'admin' ? 'admin-panel-settings' : 'home';
+  const getUserStatusColor = () => {
+    return user.isActive ? COLORS.success : COLORS.error;
   };
 
-  const getRoleColor = () => {
-    return user.role === 'admin' ? COLORS.primary : COLORS.secondary;
+  // ✅ ADDED: Status text translation
+  const getStatusText = () => {
+    return user.isActive 
+      ? t('active') || (language === 'es' ? 'Activo' : 'Active')
+      : t('inactive') || (language === 'es' ? 'Inactivo' : 'Inactive');
   };
 
+  // ✅ ADDED: Date formatting with language support
   const formatDate = (dateString) => {
-    try {
-      return DateUtils.formatDate(dateString);
-    } catch (error) {
-      return new Date(dateString).toLocaleDateString();
-    }
+    return DateUtils.formatDate(dateString, language);
   };
 
   const formatDateTime = (dateString) => {
-    try {
-      return DateUtils.formatDateTime(dateString);
-    } catch (error) {
-      return new Date(dateString).toLocaleString();
-    }
+    return DateUtils.formatDateTime(dateString, language);
   };
 
   const cardStyles = [styles.container];
@@ -64,26 +73,26 @@ export const UserManagementCard = ({
       <View style={styles.header}>
         <View style={styles.userInfo}>
           <View style={styles.avatarContainer}>
-            <Icon 
-              name={getRoleIcon()} 
-              size={24} 
-              color={getRoleColor()} 
-            />
+            <Icon name="person" size={24} color={COLORS.primary} />
           </View>
           
           <View style={styles.userDetails}>
             <Text style={styles.apartmentNumber}>
-              {user.role === 'admin' ? 'Administrator' : `Apartment ${apartmentNumber || 'N/A'}`}
+              {apartmentNumber}
             </Text>
-            <Text style={styles.username}>{user.username}</Text>
+            <Text style={styles.username}>
+              {user.username}
+            </Text>
+            
             <View style={styles.roleContainer}>
               <Icon 
-                name={user.role === 'admin' ? 'star' : 'person'} 
-                size={14} 
+                name={getRoleIcon()} 
+                size={16} 
                 color={getRoleColor()} 
               />
+              {/* ✅ FIXED: Role text translation */}
               <Text style={[styles.roleText, { color: getRoleColor() }]}>
-                {user.role === 'admin' ? 'Administrator' : 'Resident'}
+                {getRoleText()}
               </Text>
             </View>
           </View>
@@ -95,8 +104,9 @@ export const UserManagementCard = ({
             size={20} 
             color={getUserStatusColor()} 
           />
+          {/* ✅ FIXED: Status text translation */}
           <Text style={[styles.statusText, { color: getUserStatusColor() }]}>
-            {user.isActive ? 'Active' : 'Inactive'}
+            {getStatusText()}
           </Text>
         </View>
       </View>
@@ -104,7 +114,10 @@ export const UserManagementCard = ({
       <View style={styles.metadata}>
         <View style={styles.metadataRow}>
           <Icon name="calendar-today" size={16} color={COLORS.text.secondary} />
-          <Text style={styles.metadataLabel}>Created:</Text>
+          {/* ✅ FIXED: Created label translation */}
+          <Text style={styles.metadataLabel}>
+            {t('createdOn') || (language === 'es' ? 'Creado:' : 'Created:')}
+          </Text>
           <Text style={styles.metadataValue}>
             {formatDate(user.createdAt)}
           </Text>
@@ -113,7 +126,10 @@ export const UserManagementCard = ({
         {user.lastLoginAt && (
           <View style={styles.metadataRow}>
             <Icon name="login" size={16} color={COLORS.text.secondary} />
-            <Text style={styles.metadataLabel}>Last Login:</Text>
+            {/* ✅ FIXED: Last login label translation */}
+            <Text style={styles.metadataLabel}>
+              {language === 'es' ? 'Último Acceso:' : 'Last Login:'}
+            </Text>
             <Text style={styles.metadataValue}>
               {formatDateTime(user.lastLoginAt)}
             </Text>
@@ -122,7 +138,10 @@ export const UserManagementCard = ({
 
         <View style={styles.metadataRow}>
           <Icon name="update" size={16} color={COLORS.text.secondary} />
-          <Text style={styles.metadataLabel}>Updated:</Text>
+          {/* ✅ FIXED: Updated label translation */}
+          <Text style={styles.metadataLabel}>
+            {language === 'es' ? 'Actualizado:' : 'Updated:'}
+          </Text>
           <Text style={styles.metadataValue}>
             {formatDateTime(user.updatedAt)}
           </Text>
@@ -137,7 +156,10 @@ export const UserManagementCard = ({
             disabled={disabled}
           >
             <Icon name="event" size={16} color={COLORS.primary} />
-            <Text style={styles.actionText}>Reservations</Text>
+            {/* ✅ FIXED: Reservations button translation */}
+            <Text style={styles.actionText}>
+              {t('reservations') || (language === 'es' ? 'Reservas' : 'Reservations')}
+            </Text>
           </TouchableOpacity>
         )}
 
@@ -148,7 +170,10 @@ export const UserManagementCard = ({
             disabled={disabled}
           >
             <Icon name="edit" size={16} color={COLORS.primary} />
-            <Text style={styles.actionText}>Edit</Text>
+            {/* ✅ FIXED: Edit button translation */}
+            <Text style={styles.actionText}>
+              {t('edit') || (language === 'es' ? 'Editar' : 'Edit')}
+            </Text>
           </TouchableOpacity>
         )}
 
@@ -159,7 +184,10 @@ export const UserManagementCard = ({
             disabled={disabled}
           >
             <Icon name="block" size={16} color={COLORS.error} />
-            <Text style={[styles.actionText, styles.dangerText]}>Deactivate</Text>
+            {/* ✅ FIXED: Deactivate button translation */}
+            <Text style={[styles.actionText, styles.dangerText]}>
+              {t('deactivate') || (language === 'es' ? 'Desactivar' : 'Deactivate')}
+            </Text>
           </TouchableOpacity>
         )}
 
@@ -170,7 +198,10 @@ export const UserManagementCard = ({
             disabled={disabled}
           >
             <Icon name="check-circle" size={16} color={COLORS.success} />
-            <Text style={[styles.actionText, styles.successText]}>Activate</Text>
+            {/* ✅ FIXED: Activate button translation */}
+            <Text style={[styles.actionText, styles.successText]}>
+              {t('activate') || (language === 'es' ? 'Activar' : 'Activate')}
+            </Text>
           </TouchableOpacity>
         )}
       </View>

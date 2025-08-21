@@ -15,21 +15,26 @@ import { Card } from '../../components/common/Card';
 import { Button } from '../../components/common/Button';
 import { Input } from '../../components/common/Input';
 import { LoadingSpinner } from '../../components/common/LoadingSpinner';
+import { useLanguage } from '../../contexts/LanguageContext'; // ✅ ADDED: Language support
+import { ApiErrorTranslator } from '../../utils/apiErrorTranslator'; // ✅ ADDED: Error translation
+import { Localization } from '../../utils/localization'; // ✅ ADDED: Data translation
 import { DateUtils } from '../../utils/dateUtils';
+import { ValidationUtils } from '../../utils/validationUtils';
 import { COLORS, SPACING, FONT_SIZES } from '../../utils/constants';
 import { apiClient } from '../../services/apiClient';
 
 const RESERVATION_STATUSES = {
-  pending: { label: 'Pending', color: COLORS.warning, icon: 'schedule' },
-  approved: { label: 'Approved', color: COLORS.success, icon: 'check-circle' },
-  rejected: { label: 'Rejected', color: COLORS.error, icon: 'cancel' },
-  cancelled: { label: 'Cancelled', color: COLORS.text.secondary, icon: 'event-busy' },
-  completed: { label: 'Completed', color: COLORS.info, icon: 'event-available' },
+  pending: { labelKey: 'waitingForApproval', color: COLORS.warning, icon: 'schedule' },
+  approved: { labelKey: 'confirmed', color: COLORS.success, icon: 'check-circle' },
+  rejected: { labelKey: 'notApproved', color: COLORS.error, icon: 'cancel' },
+  cancelled: { labelKey: 'cancelled', color: COLORS.text.secondary, icon: 'event-busy' },
+  completed: { labelKey: 'completed', color: COLORS.info, icon: 'event-available' },
 };
 
 export const AmenityReservationsScreen = () => {
   const route = useRoute();
   const navigation = useNavigation();
+  const { language, t } = useLanguage(); // ✅ ADDED: Language hook
   const { amenityId, amenityName } = route.params;
 
   const [reservations, setReservations] = useState([]);
@@ -50,6 +55,19 @@ export const AmenityReservationsScreen = () => {
     filterReservations();
   }, [reservations, searchQuery, selectedFilter]);
 
+  // ✅ ADDED: Get translated amenity name
+  const getTranslatedAmenityName = () => {
+    return Localization.translateAmenity(amenityName, language);
+  };
+
+  // ✅ ADDED: Get translated status
+  const getStatusText = (status) => {
+    const statusConfig = RESERVATION_STATUSES[status];
+    if (!statusConfig) return status;
+    
+    return t(statusConfig.labelKey) || Localization.translateStatus(status, language);
+  };
+
   const fetchReservations = async () => {
     try {
       setLoading(true);
@@ -62,14 +80,35 @@ export const AmenityReservationsScreen = () => {
       }
     } catch (error) {
       console.error('Fetch reservations error:', error);
-      Alert.alert(
-        'Error',
-        'Failed to load reservations. Please try again.',
-        [{ text: 'OK' }]
-      );
+      // ✅ ADDED: Error translation
+      const errorMessage = ApiErrorTranslator.extractAndTranslateError(error, language);
+      Alert.alert(t('error'), errorMessage);
     } finally {
       setLoading(false);
     }
+  };
+
+  const filterReservations = () => {
+    let filtered = reservations;
+
+    // Apply search filter
+    if (searchQuery) {
+      const searchTerm = searchQuery.toLowerCase();
+      filtered = filtered.filter(reservation => {
+        const apartmentNumber = ValidationUtils.extractApartmentNumber(reservation.username);
+        const username = reservation.username?.toLowerCase() || '';
+        
+        return apartmentNumber.toLowerCase().includes(searchTerm) ||
+               username.includes(searchTerm);
+      });
+    }
+
+    // Apply status filter
+    if (selectedFilter !== 'all') {
+      filtered = filtered.filter(reservation => reservation.status === selectedFilter);
+    }
+
+    setFilteredReservations(filtered);
   };
 
   const handleRefresh = async () => {
@@ -78,140 +117,131 @@ export const AmenityReservationsScreen = () => {
     setRefreshing(false);
   };
 
-  const filterReservations = () => {
-    let filtered = reservations;
-
-    // Apply search filter
-    if (searchQuery) {
-      filtered = filtered.filter(reservation =>
-        reservation.userId.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        reservation.userName?.toLowerCase().includes(searchQuery.toLowerCase())
-      );
-    }
-
-    // Apply status filter
-    if (selectedFilter !== 'all') {
-      filtered = filtered.filter(r => r.status === selectedFilter);
-    }
-
-    setFilteredReservations(filtered);
-  };
-
-  const handleReservationAction = (reservation, action) => {
-    setSelectedReservation(reservation);
-    
-    if (action === 'approve') {
-      updateReservationStatus(reservation.id, 'approved');
-    } else if (action === 'reject') {
-      setActionModalVisible(true);
-    } else if (action === 'cancel') {
-      Alert.alert(
-        'Cancel Reservation',
-        `Are you sure you want to cancel this reservation?`,
-        [
-          { text: 'No', style: 'cancel' },
-          {
-            text: 'Yes, Cancel',
-            style: 'destructive',
-            onPress: () => updateReservationStatus(reservation.id, 'cancelled'),
+  const handleApprove = async (reservation) => {
+    // ✅ ADDED: Approval confirmation with translations
+    Alert.alert(
+      t('approveReservation') || (language === 'es' ? 'Aprobar Reserva' : 'Approve Reservation'),
+      language === 'es'
+        ? `¿Está seguro de que desea aprobar esta reserva para ${ValidationUtils.extractApartmentNumber(reservation.username)}?`
+        : `Are you sure you want to approve this reservation for ${ValidationUtils.extractApartmentNumber(reservation.username)}?`,
+      [
+        { text: t('cancel'), style: 'cancel' },
+        {
+          text: t('approve'),
+          onPress: async () => {
+            try {
+              await apiClient.post(`/api/reservations/${reservation.id}/approve`);
+              await fetchReservations();
+              // ✅ ADDED: Success message translation
+              Alert.alert(
+                t('success'),
+                language === 'es' 
+                  ? 'Reserva aprobada exitosamente'
+                  : 'Reservation approved successfully'
+              );
+            } catch (error) {
+              console.error('Error approving reservation:', error);
+              const errorMessage = ApiErrorTranslator.extractAndTranslateError(error, language);
+              Alert.alert(t('error'), errorMessage);
+            }
           },
-        ]
-      );
-    }
+        },
+      ]
+    );
   };
 
-  const updateReservationStatus = async (reservationId, newStatus, reason = '') => {
-    try {
-      const response = await apiClient.patch(`/api/reservations/${reservationId}/status`, {
-        status: newStatus,
-        adminNotes: reason,
-      });
-
-      if (response.data.success) {
-        Alert.alert('Success', `Reservation ${newStatus} successfully`);
-        fetchReservations(); // Refresh the list
-      } else {
-        throw new Error(response.data.message || 'Failed to update reservation');
-      }
-    } catch (error) {
-      console.error('Update reservation status error:', error);
-      Alert.alert(
-        'Error',
-        'Failed to update reservation status. Please try again.',
-        [{ text: 'OK' }]
-      );
-    }
+  const handleReject = (reservation) => {
+    setSelectedReservation(reservation);
+    setActionModalVisible(true);
   };
 
-  const submitRejection = () => {
+  const confirmReject = async () => {
     if (!rejectionReason.trim()) {
-      Alert.alert('Error', 'Please provide a reason for rejection');
+      // ✅ ADDED: Validation message translation
+      Alert.alert(
+        t('error'),
+        language === 'es' 
+          ? 'Se requiere una razón para rechazar la reserva'
+          : 'A reason is required to reject the reservation'
+      );
       return;
     }
 
-    updateReservationStatus(selectedReservation.id, 'rejected', rejectionReason);
-    setActionModalVisible(false);
-    setRejectionReason('');
-    setSelectedReservation(null);
+    try {
+      await apiClient.post(`/api/reservations/${selectedReservation.id}/reject`, {
+        reason: rejectionReason.trim(),
+      });
+      await fetchReservations();
+      setActionModalVisible(false);
+      setRejectionReason('');
+      // ✅ ADDED: Success message translation
+      Alert.alert(
+        t('success'),
+        language === 'es'
+          ? 'Reserva rechazada exitosamente'
+          : 'Reservation rejected successfully'
+      );
+    } catch (error) {
+      console.error('Error rejecting reservation:', error);
+      const errorMessage = ApiErrorTranslator.extractAndTranslateError(error, language);
+      Alert.alert(t('error'), errorMessage);
+    }
   };
 
-  const getStatusInfo = (status) => {
-    return RESERVATION_STATUSES[status] || { 
-      label: status, 
-      color: COLORS.text.secondary, 
-      icon: 'help' 
-    };
+  const handleCancel = async (reservation) => {
+    // ✅ ADDED: Cancel confirmation with translations
+    Alert.alert(
+      t('cancelReservation') || (language === 'es' ? 'Cancelar Reserva' : 'Cancel Reservation'),
+      language === 'es'
+        ? `¿Está seguro de que desea cancelar esta reserva para ${ValidationUtils.extractApartmentNumber(reservation.username)}?`
+        : `Are you sure you want to cancel this reservation for ${ValidationUtils.extractApartmentNumber(reservation.username)}?`,
+      [
+        { text: t('cancel'), style: 'cancel' },
+        {
+          text: language === 'es' ? 'Cancelar Reserva' : 'Cancel Reservation',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await apiClient.post(`/api/reservations/${reservation.id}/cancel`);
+              await fetchReservations();
+              // ✅ ADDED: Success message translation
+              Alert.alert(
+                t('success'),
+                language === 'es'
+                  ? 'Reserva cancelada exitosamente'
+                  : 'Reservation cancelled successfully'
+              );
+            } catch (error) {
+              console.error('Error cancelling reservation:', error);
+              const errorMessage = ApiErrorTranslator.extractAndTranslateError(error, language);
+              Alert.alert(t('error'), errorMessage);
+            }
+          },
+        },
+      ]
+    );
   };
-
-  const filters = [
-    { key: 'all', label: 'All' },
-    { key: 'pending', label: 'Pending' },
-    { key: 'approved', label: 'Approved' },
-    { key: 'rejected', label: 'Rejected' },
-    { key: 'cancelled', label: 'Cancelled' },
-    { key: 'completed', label: 'Completed' },
-  ];
-
-  const renderFilterButton = (filter) => (
-    <TouchableOpacity
-      key={filter.key}
-      style={[
-        styles.filterButton,
-        selectedFilter === filter.key && styles.activeFilterButton,
-      ]}
-      onPress={() => setSelectedFilter(filter.key)}
-    >
-      <Text
-        style={[
-          styles.filterText,
-          selectedFilter === filter.key && styles.activeFilterText,
-        ]}
-      >
-        {filter.label}
-      </Text>
-    </TouchableOpacity>
-  );
 
   const renderReservationItem = ({ item }) => {
-    const statusInfo = getStatusInfo(item.status);
-    const canApprove = item.status === 'pending';
-    const canReject = item.status === 'pending';
-    const canCancel = ['pending', 'approved'].includes(item.status);
+    const apartmentNumber = ValidationUtils.extractApartmentNumber(item.username);
+    const statusConfig = RESERVATION_STATUSES[item.status] || {};
 
     return (
       <Card style={styles.reservationCard}>
         <View style={styles.reservationHeader}>
           <View style={styles.userInfo}>
-            <Icon name="person" size={20} color={COLORS.primary} />
-            <Text style={styles.userName}>
-              {item.userName || item.userId}
-            </Text>
+            <Icon name="home" size={20} color={COLORS.primary} />
+            <Text style={styles.userName}>{apartmentNumber}</Text>
           </View>
           
-          <View style={[styles.statusBadge, { backgroundColor: statusInfo.color + '20' }]}>
-            <Icon name={statusInfo.icon} size={16} color={statusInfo.color} />
-            <Text style={[styles.statusText, { color: statusInfo.color }]}>
-              {statusInfo.label}
+          <View style={[styles.statusBadge, { backgroundColor: statusConfig.color + '20' }]}>
+            <Icon 
+              name={statusConfig.icon || 'help'} 
+              size={16} 
+              color={statusConfig.color || COLORS.text.secondary} 
+            />
+            <Text style={[styles.statusText, { color: statusConfig.color || COLORS.text.secondary }]}>
+              {getStatusText(item.status)}
             </Text>
           </View>
         </View>
@@ -219,81 +249,82 @@ export const AmenityReservationsScreen = () => {
         <View style={styles.reservationDetails}>
           <View style={styles.detailRow}>
             <Icon name="event" size={16} color={COLORS.text.secondary} />
+            {/* ✅ ADDED: Date formatting with language */}
             <Text style={styles.detailText}>
-              {DateUtils.formatDate(item.date)}
+              {DateUtils.formatDate(item.date || item.startTime, language)}
             </Text>
           </View>
           
           <View style={styles.detailRow}>
             <Icon name="schedule" size={16} color={COLORS.text.secondary} />
             <Text style={styles.detailText}>
-              {item.startTime} - {item.endTime}
-            </Text>
-          </View>
-          
-          <View style={styles.detailRow}>
-            <Icon name="group" size={16} color={COLORS.text.secondary} />
-            <Text style={styles.detailText}>
-              {item.partySize} {item.partySize === 1 ? 'person' : 'people'}
+              {DateUtils.formatTime(item.startTime)} - {DateUtils.formatTime(item.endTime)}
             </Text>
           </View>
 
-          {item.specialRequests && (
+          {item.specialRequests?.visitorCount > 0 && (
             <View style={styles.detailRow}>
-              <Icon name="comment" size={16} color={COLORS.text.secondary} />
+              <Icon name="people" size={16} color={COLORS.text.secondary} />
+              {/* ✅ ADDED: Visitor count translation */}
               <Text style={styles.detailText}>
-                {item.specialRequests}
+                {item.specialRequests.visitorCount} {
+                  item.specialRequests.visitorCount === 1 
+                    ? t('visitor') || (language === 'es' ? 'visitante' : 'visitor')
+                    : t('visitors') || (language === 'es' ? 'visitantes' : 'visitors')
+                }
               </Text>
             </View>
           )}
 
-          {item.adminNotes && (
+          {item.specialRequirements?.grillUsage && (
             <View style={styles.detailRow}>
-              <Icon name="admin-panel-settings" size={16} color={COLORS.warning} />
+              <Icon name="outdoor-grill" size={16} color={COLORS.text.secondary} />
+              {/* ✅ ADDED: Grill usage translation */}
               <Text style={styles.detailText}>
-                Admin: {item.adminNotes}
+                {t('grillUsage') || (language === 'es' ? 'Uso de parrilla' : 'Grill usage')}
               </Text>
             </View>
           )}
         </View>
 
-        {(canApprove || canReject || canCancel) && (
+        {item.status === 'pending' && (
           <View style={styles.actionButtons}>
-            {canApprove && (
-              <TouchableOpacity
-                style={[styles.actionButton, styles.approveButton]}
-                onPress={() => handleReservationAction(item, 'approve')}
-              >
-                <Icon name="check" size={16} color={COLORS.success} />
-                <Text style={[styles.actionText, { color: COLORS.success }]}>
-                  Approve
-                </Text>
-              </TouchableOpacity>
-            )}
+            <TouchableOpacity
+              style={[styles.actionButton, styles.approveButton]}
+              onPress={() => handleApprove(item)}
+            >
+              <Icon name="check" size={16} color={COLORS.success} />
+              {/* ✅ ADDED: Approve button translation */}
+              <Text style={[styles.actionText, { color: COLORS.success }]}>
+                {t('approve')}
+              </Text>
+            </TouchableOpacity>
 
-            {canReject && (
-              <TouchableOpacity
-                style={[styles.actionButton, styles.rejectButton]}
-                onPress={() => handleReservationAction(item, 'reject')}
-              >
-                <Icon name="close" size={16} color={COLORS.error} />
-                <Text style={[styles.actionText, { color: COLORS.error }]}>
-                  Reject
-                </Text>
-              </TouchableOpacity>
-            )}
+            <TouchableOpacity
+              style={[styles.actionButton, styles.rejectButton]}
+              onPress={() => handleReject(item)}
+            >
+              <Icon name="close" size={16} color={COLORS.error} />
+              {/* ✅ ADDED: Reject button translation */}
+              <Text style={[styles.actionText, { color: COLORS.error }]}>
+                {t('reject') || (language === 'es' ? 'Rechazar' : 'Reject')}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        )}
 
-            {canCancel && (
-              <TouchableOpacity
-                style={[styles.actionButton, styles.cancelButton]}
-                onPress={() => handleReservationAction(item, 'cancel')}
-              >
-                <Icon name="event-busy" size={16} color={COLORS.warning} />
-                <Text style={[styles.actionText, { color: COLORS.warning }]}>
-                  Cancel
-                </Text>
-              </TouchableOpacity>
-            )}
+        {item.status === 'approved' && (
+          <View style={styles.actionButtons}>
+            <TouchableOpacity
+              style={[styles.actionButton, styles.cancelButton]}
+              onPress={() => handleCancel(item)}
+            >
+              <Icon name="cancel" size={16} color={COLORS.warning} />
+              {/* ✅ ADDED: Cancel button translation */}
+              <Text style={[styles.actionText, { color: COLORS.warning }]}>
+                {t('cancel')}
+              </Text>
+            </TouchableOpacity>
           </View>
         )}
       </Card>
@@ -301,71 +332,31 @@ export const AmenityReservationsScreen = () => {
   };
 
   const renderEmptyState = () => (
-    <Card style={styles.emptyState}>
+    <View style={styles.emptyState}>
       <Icon name="event-busy" size={64} color={COLORS.text.secondary} />
-      <Text style={styles.emptyTitle}>No Reservations Found</Text>
-      <Text style={styles.emptyText}>
-        {searchQuery || selectedFilter !== 'all'
-          ? 'No reservations match your current filters.'
-          : 'This amenity has no reservations yet.'}
+      {/* ✅ ADDED: Empty state translations */}
+      <Text style={styles.emptyTitle}>
+        {t('noReservations') || (language === 'es' ? 'Sin Reservas' : 'No Reservations')}
       </Text>
-    </Card>
+      <Text style={styles.emptyText}>
+        {language === 'es'
+          ? 'No hay reservas para esta amenidad en este momento.'
+          : 'There are no reservations for this amenity at the moment.'}
+      </Text>
+    </View>
   );
 
-  const renderRejectionModal = () => (
-    <Modal
-      visible={actionModalVisible}
-      animationType="slide"
-      transparent
-      onRequestClose={() => setActionModalVisible(false)}
-    >
-      <View style={styles.modalOverlay}>
-        <View style={styles.modalContainer}>
-          <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>Reject Reservation</Text>
-            <TouchableOpacity
-              onPress={() => setActionModalVisible(false)}
-              style={styles.modalCloseButton}
-            >
-              <Icon name="close" size={24} color={COLORS.text.primary} />
-            </TouchableOpacity>
-          </View>
-          
-          <Text style={styles.modalSubtitle}>
-            Please provide a reason for rejecting this reservation:
-          </Text>
-          
-          <Input
-            label="Rejection Reason"
-            placeholder="e.g., Amenity under maintenance, scheduling conflict..."
-            value={rejectionReason}
-            onChangeText={setRejectionReason}
-            multiline
-            numberOfLines={3}
-            style={styles.reasonInput}
-          />
-          
-          <View style={styles.modalActions}>
-            <Button
-              title="Cancel"
-              variant="outline"
-              onPress={() => setActionModalVisible(false)}
-              style={styles.modalButton}
-            />
-            <Button
-              title="Reject Reservation"
-              variant="danger"
-              onPress={submitRejection}
-              style={styles.modalButton}
-            />
-          </View>
-        </View>
-      </View>
-    </Modal>
-  );
+  const filterOptions = [
+    { key: 'all', label: t('all') || (language === 'es' ? 'Todas' : 'All') },
+    { key: 'pending', label: t('pending') || (language === 'es' ? 'Pendientes' : 'Pending') },
+    { key: 'approved', label: t('approved') || (language === 'es' ? 'Aprobadas' : 'Approved') },
+    { key: 'rejected', label: t('rejected') || (language === 'es' ? 'Rechazadas' : 'Rejected') },
+    { key: 'cancelled', label: t('cancelled') || (language === 'es' ? 'Canceladas' : 'Cancelled') },
+    { key: 'completed', label: t('completed') || (language === 'es' ? 'Completadas' : 'Completed') },
+  ];
 
-  if (loading && reservations.length === 0) {
-    return <LoadingSpinner message="Loading reservations..." />;
+  if (loading) {
+    return <LoadingSpinner />;
   }
 
   return (
@@ -376,15 +367,19 @@ export const AmenityReservationsScreen = () => {
           <Icon name="arrow-back" size={24} color={COLORS.text.primary} />
         </TouchableOpacity>
         <View style={styles.headerInfo}>
-          <Text style={styles.headerTitle}>{amenityName}</Text>
-          <Text style={styles.headerSubtitle}>Reservations</Text>
+          {/* ✅ ADDED: Translated amenity name */}
+          <Text style={styles.headerTitle}>{getTranslatedAmenityName()}</Text>
+          {/* ✅ ADDED: Reservations subtitle translation */}
+          <Text style={styles.headerSubtitle}>
+            {t('reservations') || (language === 'es' ? 'Reservas' : 'Reservations')}
+          </Text>
         </View>
       </View>
 
       {/* Search and Filters */}
       <View style={styles.searchContainer}>
         <Input
-          placeholder="Search by user..."
+          placeholder={t('searchByApartment') || (language === 'es' ? 'Buscar por apartamento...' : 'Search by apartment...')}
           value={searchQuery}
           onChangeText={setSearchQuery}
           leftIcon="search"
@@ -392,33 +387,54 @@ export const AmenityReservationsScreen = () => {
         />
         
         <View style={styles.filtersContainer}>
-          {filters.map(renderFilterButton)}
+          {filterOptions.map((option) => (
+            <TouchableOpacity
+              key={option.key}
+              style={[
+                styles.filterButton,
+                selectedFilter === option.key && styles.activeFilterButton,
+              ]}
+              onPress={() => setSelectedFilter(option.key)}
+            >
+              <Text style={[
+                styles.filterText,
+                selectedFilter === option.key && styles.activeFilterText,
+              ]}>
+                {option.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
         </View>
       </View>
 
       {/* Stats */}
       <View style={styles.statsContainer}>
         <Card style={styles.statCard}>
-          <Text style={styles.statNumber}>{reservations.length}</Text>
-          <Text style={styles.statLabel}>Total</Text>
+          <Text style={styles.statNumber}>
+            {reservations.length}
+          </Text>
+          {/* ✅ ADDED: Total stat translation */}
+          <Text style={styles.statLabel}>
+            {t('total') || (language === 'es' ? 'Total' : 'Total')}
+          </Text>
         </Card>
         <Card style={styles.statCard}>
           <Text style={styles.statNumber}>
             {reservations.filter(r => r.status === 'pending').length}
           </Text>
-          <Text style={styles.statLabel}>Pending</Text>
+          {/* ✅ ADDED: Pending stat translation */}
+          <Text style={styles.statLabel}>
+            {t('pending') || (language === 'es' ? 'Pendientes' : 'Pending')}
+          </Text>
         </Card>
         <Card style={styles.statCard}>
           <Text style={styles.statNumber}>
             {reservations.filter(r => r.status === 'approved').length}
           </Text>
-          <Text style={styles.statLabel}>Approved</Text>
-        </Card>
-        <Card style={styles.statCard}>
-          <Text style={styles.statNumber}>
-            {reservations.filter(r => ['rejected', 'cancelled'].includes(r.status)).length}
+          {/* ✅ ADDED: Approved stat translation */}
+          <Text style={styles.statLabel}>
+            {t('approved') || (language === 'es' ? 'Aprobadas' : 'Approved')}
           </Text>
-          <Text style={styles.statLabel}>Cancelled</Text>
         </Card>
       </View>
 
@@ -435,7 +451,62 @@ export const AmenityReservationsScreen = () => {
         showsVerticalScrollIndicator={false}
       />
 
-      {renderRejectionModal()}
+      {/* Rejection Modal */}
+      <Modal
+        visible={actionModalVisible}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setActionModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContainer}>
+            <View style={styles.modalHeader}>
+              {/* ✅ ADDED: Modal title translation */}
+              <Text style={styles.modalTitle}>
+                {t('rejectReservation') || (language === 'es' ? 'Rechazar Reserva' : 'Reject Reservation')}
+              </Text>
+              <TouchableOpacity 
+                onPress={() => setActionModalVisible(false)}
+                style={styles.modalCloseButton}
+              >
+                <Icon name="close" size={24} color={COLORS.text.primary} />
+              </TouchableOpacity>
+            </View>
+            
+            {/* ✅ ADDED: Modal subtitle translation */}
+            <Text style={styles.modalSubtitle}>
+              {language === 'es'
+                ? 'Por favor, proporciona una razón para rechazar esta reserva:'
+                : 'Please provide a reason for rejecting this reservation:'}
+            </Text>
+            
+            <Input
+              label={t('reason') || (language === 'es' ? 'Razón' : 'Reason')}
+              placeholder={language === 'es' ? 'Ingresa la razón aquí...' : 'Enter reason here...'}
+              value={rejectionReason}
+              onChangeText={setRejectionReason}
+              multiline
+              numberOfLines={4}
+              style={styles.reasonInput}
+            />
+            
+            <View style={styles.modalActions}>
+              <Button
+                title={t('cancel')}
+                variant="outline"
+                onPress={() => setActionModalVisible(false)}
+                style={styles.modalButton}
+              />
+              <Button
+                title={t('reject') || (language === 'es' ? 'Rechazar' : 'Reject')}
+                variant="danger"
+                onPress={confirmReject}
+                style={styles.modalButton}
+              />
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 };
@@ -448,7 +519,7 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: SPACING.lg,
+    padding: SPACING.md,
     backgroundColor: COLORS.surface,
     borderBottomWidth: 1,
     borderBottomColor: COLORS.border,
