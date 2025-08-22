@@ -2,7 +2,7 @@ import React, { useCallback } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import { AuthProvider, useAuth } from '../contexts/AuthContext';
-import { useLanguage } from '../contexts/LanguageContext'; // ✅ ADDED: Language support
+import { useLanguage } from '../contexts/LanguageContext';
 import { LoadingSpinner } from '../components/common/LoadingSpinner';
 import { COLORS } from '../utils/constants';
 
@@ -20,7 +20,7 @@ const RootStack = createStackNavigator();
 const MainStack = createStackNavigator();
 
 const MainStackNavigator = React.memo(() => {
-  const { language, t } = useLanguage(); // ✅ ADDED: Language hook
+  const { language, t } = useLanguage();
 
   return (
     <MainStack.Navigator screenOptions={{ headerShown: false }}>
@@ -32,7 +32,7 @@ const MainStackNavigator = React.memo(() => {
         component={AmenityBookingScreen}
         options={{ 
           headerShown: true,
-          title: language === 'es' ? 'Reservar Amenidad' : 'Book Amenity', // ✅ FIXED: Dynamic translation
+          title: language === 'es' ? 'Reservar Amenidad' : 'Book Amenity',
           headerStyle: { backgroundColor: COLORS.primary },
           headerTintColor: COLORS.text.inverse,
           headerTitleStyle: { fontWeight: 'bold' },
@@ -43,11 +43,11 @@ const MainStackNavigator = React.memo(() => {
         component={BookingConfirmationScreen}
         options={{ 
           headerShown: true,
-          title: language === 'es' ? 'Reserva Confirmada' : 'Booking Confirmed', // ✅ FIXED: Dynamic translation
+          title: language === 'es' ? 'Reserva Confirmada' : 'Booking Confirmed',
           headerStyle: { backgroundColor: COLORS.primary },
           headerTintColor: COLORS.text.inverse,
           headerTitleStyle: { fontWeight: 'bold' },
-          headerLeft: null, // Prevent going back
+          headerLeft: null,
         }}
       />
 
@@ -57,7 +57,7 @@ const MainStackNavigator = React.memo(() => {
         component={AmenityReservationsScreen}
         options={({ route }) => ({
           headerShown: true,
-          title: `${route.params?.amenityName || (language === 'es' ? 'Amenidad' : 'Amenity')} ${language === 'es' ? 'Reservas' : 'Reservations'}`, // ✅ FIXED: Dynamic translation
+          title: `${route.params?.amenityName || (language === 'es' ? 'Amenidad' : 'Amenity')} ${language === 'es' ? 'Reservas' : 'Reservations'}`,
           headerStyle: { backgroundColor: COLORS.primary },
           headerTintColor: COLORS.text.inverse,
           headerTitleStyle: { fontWeight: 'bold' },
@@ -69,9 +69,8 @@ const MainStackNavigator = React.memo(() => {
 
 const RootNavigator = React.memo(() => {
   const { user, loading, initialized } = useAuth();
-  const { language } = useLanguage(); // ✅ ADDED: Language hook
+  const { language } = useLanguage();
 
-  // Memoize the navigation state logic
   const getNavigationState = useCallback(() => {
     if (loading || !initialized) {
       return 'loading';
@@ -82,7 +81,7 @@ const RootNavigator = React.memo(() => {
   const navigationState = getNavigationState();
 
   if (navigationState === 'loading') {
-    return <LoadingSpinner message={language === 'es' ? 'Cargando aplicación...' : 'Loading application...'} />; // ✅ FIXED: Translation
+    return <LoadingSpinner message={language === 'es' ? 'Cargando aplicación...' : 'Loading application...'} />;
   }
 
   return (
@@ -96,7 +95,8 @@ const RootNavigator = React.memo(() => {
   );
 });
 
-export const AppNavigator = () => {
+// 🚨 FIX: Change this line - use default export instead of named export
+const AppNavigator = () => {
   return (
     <AuthProvider>
       <NavigationContainer>
@@ -105,3 +105,6 @@ export const AppNavigator = () => {
     </AuthProvider>
   );
 };
+
+// 🚨 FIX: Use default export
+export default AppNavigator;

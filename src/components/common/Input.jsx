@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import {
   View,
-  TextInput,
   Text,
+  TextInput,
   StyleSheet,
   TouchableOpacity,
 } from 'react-native';
@@ -11,78 +11,90 @@ import { COLORS, SPACING, FONT_SIZES } from '../../utils/constants';
 
 export const Input = ({
   label,
-  placeholder,
   value,
   onChangeText,
+  placeholder,
   secureTextEntry = false,
-  keyboardType = 'default',
-  autoCapitalize = 'sentences',
+  leftIcon,
+  rightIcon,
+  onRightIconPress,
   error,
   disabled = false,
   multiline = false,
   numberOfLines = 1,
   style,
   inputStyle,
-  leftIcon,
-  rightIcon,
-  onRightIconPress,
+  keyboardType = 'default',
+  maxLength,
+  autoCapitalize = 'sentences',
+  autoCorrect = true,
+  ...props
 }) => {
   const [isFocused, setIsFocused] = useState(false);
-  const [isPasswordVisible, setIsPasswordVisible] = useState(!secureTextEntry);
+  const [isSecureTextVisible, setIsSecureTextVisible] = useState(false);
 
   const handleSecureTextToggle = () => {
-    setIsPasswordVisible(!isPasswordVisible);
+    setIsSecureTextVisible(!isSecureTextVisible);
   };
 
-  const renderIcon = (iconName, onPress, position = 'left') => (
-    <TouchableOpacity
-      style={[styles.iconContainer, position === 'right' && styles.rightIcon]}
-      onPress={onPress}
-      disabled={!onPress}
-    >
-      <Icon 
-        name={iconName} 
-        size={20} 
-        color={isFocused ? COLORS.primary : COLORS.text.secondary} 
-      />
-    </TouchableOpacity>
-  );
+  const renderIcon = (iconName, onPress, position) => {
+    return (
+      <TouchableOpacity
+        style={[styles.iconContainer, position === 'right' && styles.rightIcon]}
+        onPress={onPress}
+        disabled={!onPress}
+      >
+        <Icon 
+          name={iconName} 
+          size={20} 
+          color={COLORS.text.secondary} 
+        />
+      </TouchableOpacity>
+    );
+  };
+
+  const containerStyles = [
+    styles.inputContainer,
+    isFocused && styles.focused,
+    error && styles.error,
+    disabled && styles.disabled,
+  ];
+
+  const textInputStyles = [
+    styles.input,
+    leftIcon && styles.inputWithLeftIcon,
+    (rightIcon || secureTextEntry) && styles.inputWithRightIcon,
+    inputStyle,
+  ];
 
   return (
     <View style={[styles.container, style]}>
       {label && <Text style={styles.label}>{label}</Text>}
       
-      <View style={[
-        styles.inputContainer,
-        isFocused && styles.focused,
-        error && styles.error,
-        disabled && styles.disabled,
-      ]}>
-        {leftIcon && renderIcon(leftIcon)}
+      <View style={containerStyles}>
+        {leftIcon && renderIcon(leftIcon, null, 'left')}
         
         <TextInput
-          style={[
-            styles.input,
-            leftIcon && styles.inputWithLeftIcon,
-            (rightIcon || secureTextEntry) && styles.inputWithRightIcon,
-            inputStyle,
-          ]}
-          placeholder={placeholder}
-          placeholderTextColor={COLORS.text.secondary}
+          style={textInputStyles}
           value={value}
           onChangeText={onChangeText}
-          secureTextEntry={secureTextEntry && !isPasswordVisible}
-          keyboardType={keyboardType}
-          autoCapitalize={autoCapitalize}
+          placeholder={placeholder}
+          placeholderTextColor={COLORS.text.secondary}
+          secureTextEntry={secureTextEntry && !isSecureTextVisible}
           editable={!disabled}
           multiline={multiline}
           numberOfLines={numberOfLines}
+          keyboardType={keyboardType}
+          maxLength={maxLength}
+          autoCapitalize={autoCapitalize}
+          autoCorrect={autoCorrect}
           onFocus={() => setIsFocused(true)}
           onBlur={() => setIsFocused(false)}
+          {...props}
         />
         
         {secureTextEntry && renderIcon(
-          isPasswordVisible ? 'visibility-off' : 'visibility',
+          isSecureTextVisible ? 'visibility-off' : 'visibility',
           handleSecureTextToggle,
           'right'
         )}
