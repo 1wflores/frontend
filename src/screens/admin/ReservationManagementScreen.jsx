@@ -17,15 +17,16 @@ import { Button } from '../../components/common/Button';
 import { LoadingSpinner } from '../../components/common/LoadingSpinner';
 import { Card } from '../../components/common/Card';
 import { Input } from '../../components/common/Input';
-import { useLanguage } from '../../contexts/LanguageContext'; // ✅ ADDED: Language support
-import { ApiErrorTranslator } from '../../utils/apiErrorTranslator'; // ✅ ADDED: Error translation
-import { Localization } from '../../utils/localization'; // ✅ ADDED: Data translation
+import { useLanguage } from '../../contexts/LanguageContext';
+import { ApiErrorTranslator } from '../../utils/apiErrorTranslator';
+import { Localization } from '../../utils/localization';
 import { DateUtils } from '../../utils/dateUtils';
 import { COLORS, SPACING, FONT_SIZES } from '../../utils/constants';
 
 const ReservationManagementScreen = () => {
-  const { language, t } = useLanguage(); // ✅ ADDED: Language hook
+  const { language, t } = useLanguage();
   
+  // 🚨 FIX: Ensure reservations is always an array
   const [reservations, setReservations] = useState([]);
   const [filteredReservations, setFilteredReservations] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -44,7 +45,6 @@ const ReservationManagementScreen = () => {
     filterReservations();
   }, [reservations, searchQuery, selectedFilter]);
 
-  // ✅ FIXED: Validation function with translations
   const validateDenialReason = (reason) => {
     if (!reason || reason.trim().length === 0) {
       return language === 'es' 
@@ -64,26 +64,40 @@ const ReservationManagementScreen = () => {
         : 'Denial reason cannot exceed 500 characters';
     }
     
-    return null; // Valid
+    return null;
   };
 
   const fetchReservations = async () => {
     try {
       setLoading(true);
       const data = await reservationService.getAllReservations();
-      setReservations(data);
+      
+      // 🚨 FIX: Ensure data is always an array
+      const reservationData = Array.isArray(data) ? data : (data?.reservations || []);
+      
+      console.log('Fetched reservations:', reservationData);
+      setReservations(reservationData);
     } catch (error) {
       console.error('Error fetching reservations:', error);
-      // ✅ FIXED: Error translation
       const errorMessage = ApiErrorTranslator.extractAndTranslateError(error, language);
       Alert.alert(t('error'), errorMessage);
+      
+      // 🚨 FIX: Set empty array on error to prevent undefined
+      setReservations([]);
     } finally {
       setLoading(false);
     }
   };
 
   const filterReservations = () => {
-    let filtered = reservations;
+    // 🚨 FIX: Check if reservations is an array before filtering
+    if (!Array.isArray(reservations)) {
+      console.warn('Reservations is not an array:', reservations);
+      setFilteredReservations([]);
+      return;
+    }
+
+    let filtered = [...reservations]; // Create a copy to avoid mutations
 
     // Apply search filter
     if (searchQuery) {
@@ -95,11 +109,10 @@ const ReservationManagementScreen = () => {
         
         return (
           userName.toLowerCase().includes(searchText) ||
-          // ✅ FIXED: Search in both English and translated amenity names
           amenityName.toLowerCase().includes(searchText) ||
           Localization.translateAmenity(amenityName, language).toLowerCase().includes(searchText) ||
           apartmentId.toLowerCase().includes(searchText) ||
-          reservation.id.toLowerCase().includes(searchText)
+          reservation.id?.toString().toLowerCase().includes(searchText)
         );
       });
     }
@@ -117,6 +130,10 @@ const ReservationManagementScreen = () => {
         break;
       case 'today':
         filtered = filtered.filter(r => DateUtils.isToday(r.startTime));
+        break;
+      case 'all':
+      default:
+        // No additional filtering
         break;
     }
 
@@ -137,29 +154,36 @@ const ReservationManagementScreen = () => {
   };
 
   const handleApproveReservation = async (reservation) => {
-    // ✅ FIXED: Approval confirmation with translations
     Alert.alert(
-      language === 'es' ? 'Aprobar Reserva' : 'Approve Reservation',
+      language === 'es' ? 'Confirmar Aprobación' : 'Confirm Approval',
       language === 'es' 
-        ? `¿Aprobar reserva para apartamento ${reservation.username || reservation.userId}?`
-        : `Approve reservation for apartment ${reservation.username || reservation.userId}?`,
+        ? `¿Está seguro de que desea aprobar esta reserva?`
+        : `Are you sure you want to approve this reservation?`,
       [
         { text: t('cancel'), style: 'cancel' },
         {
-          text: language === 'es' ? 'Aprobar' : 'Approve',
+          text: t('approve'),
           onPress: async () => {
             try {
+              setLoading(true);
               await reservationService.updateReservationStatus(reservation.id, 'approved');
-              // ✅ FIXED: Success message translation
-              Alert.alert(t('success'), language === 'es' 
-                ? 'Reserva aprobada exitosamente'
-                : 'Reservation approved successfully'
+              
+              Alert.alert(
+                t('success'), 
+                language === 'es' 
+                  ? 'Reserva aprobada exitosamente'
+                  : 'Reservation approved successfully',
+                [{ 
+                  text: t('ok'),
+                  onPress: () => fetchReservations()
+                }]
               );
-              await fetchReservations();
             } catch (error) {
               console.error('Error approving reservation:', error);
               const errorMessage = ApiErrorTranslator.extractAndTranslateError(error, language);
               Alert.alert(t('error'), errorMessage);
+            } finally {
+              setLoading(false);
             }
           }
         }
@@ -169,14 +193,11 @@ const ReservationManagementScreen = () => {
 
   const handleDenyReservation = (reservation) => {
     setSelectedReservation(reservation);
-    setDenialReason(''); // Reset the reason
     setDenyModalVisible(true);
   };
 
-  const submitDenial = async () => {
-    // ✅ FIXED: Validation with translations
+  const handleConfirmDeny = async () => {
     const validationError = validateDenialReason(denialReason);
-    
     if (validationError) {
       Alert.alert(
         language === 'es' ? 'Razón de Denegación Inválida' : 'Invalid Denial Reason',
@@ -195,7 +216,6 @@ const ReservationManagementScreen = () => {
         denialReason.trim()
       );
       
-      // ✅ FIXED: Success message translation
       Alert.alert(
         t('success'), 
         language === 'es' 
@@ -207,7 +227,7 @@ const ReservationManagementScreen = () => {
             setDenyModalVisible(false);
             setDenialReason('');
             setSelectedReservation(null);
-            fetchReservations(); // Refresh the list
+            fetchReservations();
           }
         }]
       );
@@ -231,7 +251,6 @@ const ReservationManagementScreen = () => {
   const renderEmptyState = () => (
     <View style={styles.emptyState}>
       <Icon name="event-available" size={64} color={COLORS.text.secondary} />
-      {/* ✅ FIXED: Empty state with translations */}
       <Text style={styles.emptyTitle}>
         {language === 'es' ? 'Sin Reservas' : 'No Reservations'}
       </Text>
@@ -253,7 +272,6 @@ const ReservationManagementScreen = () => {
     </View>
   );
 
-  // ✅ FIXED: Get filter label with translations
   const getFilterLabel = (filterKey) => {
     const labels = {
       en: {
@@ -274,7 +292,6 @@ const ReservationManagementScreen = () => {
     return labels[language]?.[filterKey] || labels.en[filterKey] || filterKey;
   };
 
-  // ✅ FIXED: Filters with translations
   const filters = [
     { key: 'pending', label: getFilterLabel('pending') },
     { key: 'all', label: getFilterLabel('all') },
@@ -301,13 +318,13 @@ const ReservationManagementScreen = () => {
     </TouchableOpacity>
   );
 
-  if (loading && reservations.length === 0) {
+  // 🚨 FIX: Add loading check for initial load
+  if (loading && (!reservations || reservations.length === 0)) {
     return <LoadingSpinner message={language === 'es' ? 'Cargando reservas...' : 'Loading reservations...'} />;
   }
 
   return (
     <View style={styles.container}>
-      {/* ✅ FIXED: Search with translations */}
       <View style={styles.searchContainer}>
         <Input
           placeholder={language === 'es' 
@@ -321,12 +338,10 @@ const ReservationManagementScreen = () => {
         />
       </View>
 
-      {/* ✅ FIXED: Filters with translations */}
       <View style={styles.filtersContainer}>
         {filters.map(renderFilterButton)}
       </View>
 
-      {/* ✅ FIXED: Stats with translations */}
       <View style={styles.statsContainer}>
         <Card style={styles.statCard}>
           <Text style={styles.statNumber}>
@@ -352,7 +367,6 @@ const ReservationManagementScreen = () => {
         </Card>
       </View>
 
-      {/* Reservations List */}
       <FlatList
         data={filteredReservations}
         renderItem={renderReservationItem}
@@ -365,11 +379,11 @@ const ReservationManagementScreen = () => {
         showsVerticalScrollIndicator={false}
       />
 
-      {/* ✅ FIXED: Denial Modal with translations */}
+      {/* Denial Modal */}
       <Modal
         visible={denyModalVisible}
         transparent={true}
-        animationType="slide"
+        animationType="fade"
         onRequestClose={() => setDenyModalVisible(false)}
       >
         <View style={styles.modalOverlay}>
@@ -380,68 +394,45 @@ const ReservationManagementScreen = () => {
               </Text>
               <TouchableOpacity
                 style={styles.modalCloseButton}
-                onPress={() => {
-                  setDenyModalVisible(false);
-                  setDenialReason('');
-                }}
+                onPress={() => setDenyModalVisible(false)}
               >
                 <Icon name="close" size={24} color={COLORS.text.secondary} />
               </TouchableOpacity>
             </View>
-
-            {selectedReservation && (
-              <>
-                <Text style={styles.modalSubtitle}>
-                  {language === 'es' 
-                    ? `Reserva para ${Localization.translateAmenity(selectedReservation.amenityName, language)} por ${selectedReservation.username || selectedReservation.userId}`
-                    : `Reservation for ${selectedReservation.amenityName || 'Amenity'} by ${selectedReservation.username || selectedReservation.userId}`
-                  }
-                </Text>
-                
-                <View style={styles.denialReasonContainer}>
-                  <Text style={styles.inputLabel}>
-                    {language === 'es' ? 'Razón para la Denegación' : 'Reason for Denial'} 
-                    <Text style={styles.required}> *</Text>
-                  </Text>
-                  <TextInput
-                    style={[
-                      styles.denialInput,
-                      denialReason.trim().length > 0 && denialReason.trim().length < 10 && styles.inputError
-                    ]}
-                    placeholder={language === 'es' 
-                      ? 'Por favor proporcione una justificación detallada para denegar esta reserva...'
-                      : 'Please provide a detailed justification for denying this reservation...'
-                    }
-                    value={denialReason}
-                    onChangeText={setDenialReason}
-                    multiline
-                    numberOfLines={4}
-                    textAlignVertical="top"
-                  />
-                  <Text style={styles.characterCount}>
-                    {denialReason.length}/500 {language === 'es' ? 'caracteres' : 'characters'}
-                  </Text>
-                </View>
-
-                <View style={styles.modalActions}>
-                  <Button
-                    title={t('cancel')}
-                    variant="outline"
-                    onPress={() => {
-                      setDenyModalVisible(false);
-                      setDenialReason('');
-                    }}
-                    style={styles.modalButton}
-                  />
-                  <Button
-                    title={language === 'es' ? 'Denegar Reserva' : 'Deny Reservation'}
-                    onPress={submitDenial}
-                    loading={loading}
-                    style={[styles.modalButton, styles.denyButton]}
-                  />
-                </View>
-              </>
-            )}
+            
+            <Text style={styles.modalSubtitle}>
+              {language === 'es' 
+                ? 'Proporcione una razón para denegar esta reserva:'
+                : 'Please provide a reason for denying this reservation:'
+              }
+            </Text>
+            
+            <Input
+              placeholder={language === 'es' 
+                ? 'Ingrese la razón de denegación...'
+                : 'Enter denial reason...'
+              }
+              value={denialReason}
+              onChangeText={setDenialReason}
+              multiline={true}
+              numberOfLines={4}
+              style={styles.reasonInput}
+            />
+            
+            <View style={styles.modalActions}>
+              <Button
+                title={t('cancel')}
+                variant="outline"
+                onPress={() => setDenyModalVisible(false)}
+                style={styles.modalButton}
+              />
+              <Button
+                title={t('deny')}
+                onPress={handleConfirmDeny}
+                loading={loading}
+                style={styles.modalButton}
+              />
+            </View>
           </View>
         </View>
       </Modal>
@@ -464,8 +455,10 @@ const styles = StyleSheet.create({
   filtersContainer: {
     flexDirection: 'row',
     paddingHorizontal: SPACING.md,
-    paddingBottom: SPACING.md,
+    paddingVertical: SPACING.sm,
     backgroundColor: COLORS.surface,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.background,
   },
   filterButton: {
     paddingHorizontal: SPACING.sm,
@@ -488,7 +481,7 @@ const styles = StyleSheet.create({
   statsContainer: {
     flexDirection: 'row',
     padding: SPACING.md,
-    paddingTop: 0,
+    paddingBottom: SPACING.sm,
   },
   statCard: {
     flex: 1,
@@ -505,7 +498,6 @@ const styles = StyleSheet.create({
     fontSize: FONT_SIZES.xs,
     color: COLORS.text.secondary,
     marginTop: SPACING.xs / 2,
-    textAlign: 'center',
   },
   listContainer: {
     padding: SPACING.md,
@@ -540,7 +532,7 @@ const styles = StyleSheet.create({
     padding: SPACING.lg,
     margin: SPACING.lg,
     width: '90%',
-    maxHeight: '80%',
+    maxWidth: 400,
   },
   modalHeader: {
     flexDirection: 'row',
@@ -559,49 +551,17 @@ const styles = StyleSheet.create({
   modalSubtitle: {
     fontSize: FONT_SIZES.md,
     color: COLORS.text.secondary,
+    marginBottom: SPACING.md,
+  },
+  reasonInput: {
     marginBottom: SPACING.lg,
-  },
-  denialReasonContainer: {
-    marginBottom: SPACING.lg,
-  },
-  inputLabel: {
-    fontSize: FONT_SIZES.md,
-    fontWeight: '600',
-    color: COLORS.text.primary,
-    marginBottom: SPACING.sm,
-  },
-  required: {
-    color: COLORS.error,
-  },
-  denialInput: {
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    borderRadius: 8,
-    padding: SPACING.md,
-    fontSize: FONT_SIZES.md,
-    color: COLORS.text.primary,
-    backgroundColor: COLORS.background,
-    minHeight: 100,
-  },
-  inputError: {
-    borderColor: COLORS.error,
-  },
-  characterCount: {
-    fontSize: FONT_SIZES.sm,
-    color: COLORS.text.secondary,
-    textAlign: 'right',
-    marginTop: SPACING.xs,
   },
   modalActions: {
     flexDirection: 'row',
     justifyContent: 'space-between',
   },
   modalButton: {
-    flex: 1,
-    marginHorizontal: SPACING.xs,
-  },
-  denyButton: {
-    backgroundColor: COLORS.error,
+    flex: 0.48,
   },
 });
 

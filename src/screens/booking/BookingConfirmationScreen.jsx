@@ -474,3 +474,6 @@ const styles = StyleSheet.create({
     width: '100%',
   },
 });
+
+// 🚨 FIX: Use default export instead of named export
+export default BookingConfirmationScreen;

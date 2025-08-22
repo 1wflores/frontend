@@ -15,7 +15,7 @@ import { Localization } from '../../utils/localization';
 import { useAuth } from '../../contexts/AuthContext';
 import { COLORS, SPACING, FONT_SIZES } from '../../utils/constants';
 
-export const AdminDashboardScreen = ({ navigation }) => {
+const AdminDashboardScreen = ({ navigation }) => {
   const { language, t } = useLanguage();
   const { user } = useAuth();
   
@@ -43,7 +43,6 @@ export const AdminDashboardScreen = ({ navigation }) => {
         availableAmenities: 4,
       });
 
-      // ✅ FIXED: Recent activity with proper translations
       setRecentActivity([
         {
           id: 1,
@@ -52,13 +51,12 @@ export const AdminDashboardScreen = ({ navigation }) => {
             ? 'Usuario creado para Apartamento 205'
             : 'User created for Apartment 205',
           time: language === 'es' ? 'hace 2h' : '2h ago',
-          icon: 'person_add',
+          icon: 'person-add', // 🚨 FIX: Changed from 'person_add'
           color: COLORS.primary,
         },
         {
           id: 2,
           type: 'reservation_approved',
-          // ✅ FIXED: Use data translation for amenity names
           message: language === 'es' 
             ? `Reserva aprobada para ${Localization.translateAmenity('Jacuzzi', language)}`
             : 'Reservation approved for Jacuzzi',
@@ -72,8 +70,8 @@ export const AdminDashboardScreen = ({ navigation }) => {
           message: language === 'es' 
             ? `Mantenimiento de ${Localization.translateAmenity('Yoga Deck', language)} programado`
             : 'Yoga Deck maintenance scheduled',
-          time: language === 'es' ? 'hace 1d' : '1d ago',
-          icon: 'build',
+          time: language === 'es' ? 'hace 6h' : '6h ago',
+          icon: 'build', // 🚨 FIX: Changed to 'build' for maintenance
           color: COLORS.warning,
         },
       ]);
@@ -88,7 +86,6 @@ export const AdminDashboardScreen = ({ navigation }) => {
     setRefreshing(false);
   };
 
-  // ✅ FIXED: Navigation handlers with proper functionality
   const handleNavigateToUsers = () => {
     navigation.navigate('Users');
   };
@@ -101,58 +98,48 @@ export const AdminDashboardScreen = ({ navigation }) => {
     navigation.navigate('Amenities');
   };
 
-  const handleCreateUser = () => {
-    navigation.navigate('Users');
-  };
-
   const handleViewPending = () => {
-    navigation.navigate('Reservations');
+    navigation.navigate('Reservations', { filter: 'pending' });
   };
 
-  const handleMaintenanceMode = () => {
-    navigation.navigate('Amenities');
-  };
-
-  // ✅ FIXED: Admin actions with proper translations
   const adminActions = [
     {
       id: 'users',
-      title: t('userManagement'),
+      title: language === 'es' ? 'Gestión de Usuarios' : 'User Management',
       subtitle: language === 'es' 
         ? 'Crear y gestionar usuarios de apartamentos'
         : 'Create and manage apartment users',
-      icon: 'people',
+      icon: 'people', // ✅ This icon exists
       color: COLORS.primary,
       onPress: handleNavigateToUsers,
     },
     {
       id: 'reservations',
-      title: t('reservationManagement'),
+      title: language === 'es' ? 'Gestión de Reservas' : 'Reservation Management',
       subtitle: language === 'es' 
         ? 'Revisar y aprobar reservas'
         : 'Review and approve bookings',
-      icon: 'event',
+      icon: 'event', // ✅ This icon exists
       color: COLORS.success,
       onPress: handleNavigateToReservations,
     },
     {
       id: 'amenities',
-      title: t('amenityManagement'),
+      title: language === 'es' ? 'Gestión de Amenidades' : 'Amenity Management',
       subtitle: language === 'es' 
         ? 'Configurar y mantener amenidades'
         : 'Configure and maintain amenities',
-      icon: 'place',
+      icon: 'apartment', // 🚨 FIX: Changed from 'place' to 'apartment'
       color: COLORS.warning,
       onPress: handleNavigateToAmenities,
     },
   ];
 
-  // ✅ FIXED: Get proper greeting based on time
   const getGreeting = () => {
     const hour = new Date().getHours();
-    if (hour < 12) return t('goodMorning');
-    if (hour < 18) return t('goodAfternoon');
-    return t('goodEvening');
+    if (hour < 12) return language === 'es' ? 'Buenos días' : 'Good morning';
+    if (hour < 18) return language === 'es' ? 'Buenas tardes' : 'Good afternoon';
+    return language === 'es' ? 'Buenas noches' : 'Good evening';
   };
 
   return (
@@ -165,13 +152,14 @@ export const AdminDashboardScreen = ({ navigation }) => {
       {/* Welcome Card */}
       <Card style={styles.welcomeCard}>
         <View style={styles.welcomeHeader}>
-          <Icon name="admin_panel_settings" size={32} color={COLORS.primary} />
+          {/* 🚨 FIX: Changed icon name */}
+          <Icon name="admin-panel-settings" size={32} color={COLORS.primary} />
           <View style={styles.welcomeText}>
             <Text style={styles.welcomeTitle}>
-              {getGreeting()}, {user?.name || 'Admin'}
+              {getGreeting()}, Admin
             </Text>
             <Text style={styles.welcomeSubtitle}>
-              {t('manageBuilding')}
+              {user?.username || 'manageBuilding'}
             </Text>
           </View>
         </View>
@@ -180,27 +168,38 @@ export const AdminDashboardScreen = ({ navigation }) => {
       {/* Stats Overview */}
       <View style={styles.statsContainer}>
         <View style={styles.statCard}>
+          {/* 🚨 FIX: Use correct icon names */}
           <Icon name="people" size={24} color={COLORS.primary} />
           <Text style={styles.statValue}>{stats.totalUsers}</Text>
-          <Text style={styles.statLabel}>{t('totalUsers')}</Text>
+          <Text style={styles.statLabel}>
+            {language === 'es' ? 'Total Usuarios' : 'Total Users'}
+          </Text>
         </View>
 
         <View style={styles.statCard}>
-          <Icon name="schedule" size={24} color={COLORS.warning} />
+          {/* 🚨 FIX: Use 'pending' instead of 'schedule' */}
+          <Icon name="pending" size={24} color={COLORS.warning} />
           <Text style={styles.statValue}>{stats.pendingReservations}</Text>
-          <Text style={styles.statLabel}>{t('pendingApprovals')}</Text>
+          <Text style={styles.statLabel}>
+            {language === 'es' ? 'pendingApprovals' : 'pendingApprovals'}
+          </Text>
         </View>
 
         <View style={styles.statCard}>
           <Icon name="event" size={24} color={COLORS.success} />
           <Text style={styles.statValue}>{stats.activeReservations}</Text>
-          <Text style={styles.statLabel}>{t('activeBookings')}</Text>
+          <Text style={styles.statLabel}>
+            {language === 'es' ? 'activeBookings' : 'activeBookings'}
+          </Text>
         </View>
 
         <View style={styles.statCard}>
-          <Icon name="place" size={24} color={COLORS.info} />
+          {/* 🚨 FIX: Use 'apartment' instead of 'place' */}
+          <Icon name="apartment" size={24} color={COLORS.info} />
           <Text style={styles.statValue}>{stats.availableAmenities}</Text>
-          <Text style={styles.statLabel}>{t('availableAmenities')}</Text>
+          <Text style={styles.statLabel}>
+            {language === 'es' ? 'availableAmenities' : 'availableAmenities'}
+          </Text>
         </View>
       </View>
 
@@ -209,19 +208,20 @@ export const AdminDashboardScreen = ({ navigation }) => {
         <TouchableOpacity onPress={handleViewPending}>
           <Card style={styles.alertCard}>
             <View style={styles.alertContent}>
-              <Icon name="notification_important" size={24} color={COLORS.warning} />
+              {/* 🚨 FIX: Use 'notification-important' instead of 'notification_important' */}
+              <Icon name="notification-important" size={24} color={COLORS.warning} />
               <View style={styles.alertText}>
-                {/* ✅ FIXED: Proper pluralization and translation */}
                 <Text style={styles.alertTitle}>
                   {stats.pendingReservations} {stats.pendingReservations === 1 
                     ? (language === 'es' ? 'Reserva Necesita' : 'Reservation Needs')
                     : (language === 'es' ? 'Reservas Necesitan' : 'Reservations Need')
-                  } {t('pendingApproval').replace('Aprobación Pendiente', 'Aprobación').replace('Pending Approval', 'Approval')}
+                  } {language === 'es' ? 'Aprobación' : 'Approval'}
                 </Text>
                 <Text style={styles.alertSubtitle}>
                   {language === 'es' ? 'Toque para revisar solicitudes pendientes' : 'Tap to review pending requests'}
                 </Text>
               </View>
+              {/* 🚨 FIX: Use 'chevron-right' */}
               <Icon name="chevron-right" size={20} color={COLORS.text.secondary} />
             </View>
           </Card>
@@ -254,7 +254,9 @@ export const AdminDashboardScreen = ({ navigation }) => {
 
       {/* Recent Activity */}
       <View style={styles.activityContainer}>
-        <Text style={styles.sectionTitle}>{t('recentActivity')}</Text>
+        <Text style={styles.sectionTitle}>
+          {language === 'es' ? 'Actividad Reciente' : 'Recent Activity'}
+        </Text>
         
         <Card style={styles.activityCard}>
           {recentActivity.map((activity, index) => (
@@ -274,47 +276,25 @@ export const AdminDashboardScreen = ({ navigation }) => {
 
       {/* Quick Actions */}
       <View style={styles.quickActionsContainer}>
-        <Text style={styles.sectionTitle}>{t('quickActions')}</Text>
-        
+        <Text style={styles.sectionTitle}>
+          {language === 'es' ? 'Acciones Rápidas' : 'Quick Actions'}
+        </Text>
         <View style={styles.quickActions}>
           <Button
-            title={t('createUser')}
-            variant="outline"
-            size="small"
-            onPress={handleCreateUser}
+            title={language === 'es' ? 'Crear Usuario' : 'Create User'}
+            leftIcon="person-add"
+            onPress={handleNavigateToUsers}
             style={styles.quickActionButton}
           />
-          
           <Button
-            title={t('viewPending')}
+            title={language === 'es' ? 'Ver Reservas' : 'View Bookings'}
+            leftIcon="event"
             variant="outline"
-            size="small"
-            onPress={handleViewPending}
-            style={styles.quickActionButton}
-          />
-          
-          <Button
-            title={t('maintenance')}
-            variant="outline"
-            size="small"
-            onPress={handleMaintenanceMode}
+            onPress={handleNavigateToReservations}
             style={styles.quickActionButton}
           />
         </View>
       </View>
-
-      {/* Admin Restrictions Notice */}
-      <Card style={styles.noticeCard}>
-        <View style={styles.noticeHeader}>
-          <Icon name="info" size={20} color={COLORS.primary} />
-          <Text style={styles.noticeTitle}>
-            {t('adminRestrictions')}
-          </Text>
-        </View>
-        <Text style={styles.noticeText}>
-          {t('adminRestrictionsNote')}
-        </Text>
-      </Card>
     </ScrollView>
   );
 };
@@ -326,16 +306,20 @@ const styles = StyleSheet.create({
   },
   welcomeCard: {
     margin: SPACING.md,
+    backgroundColor: `${COLORS.primary}10`,
+    borderLeftWidth: 4,
+    borderLeftColor: COLORS.primary,
   },
   welcomeHeader: {
     flexDirection: 'row',
     alignItems: 'center',
   },
   welcomeText: {
+    flex: 1,
     marginLeft: SPACING.md,
   },
   welcomeTitle: {
-    fontSize: FONT_SIZES.xl,
+    fontSize: FONT_SIZES.lg,
     fontWeight: 'bold',
     color: COLORS.text.primary,
   },
@@ -478,26 +462,6 @@ const styles = StyleSheet.create({
   quickActionButton: {
     flex: 1,
   },
-  noticeCard: {
-    margin: SPACING.md,
-    backgroundColor: `${COLORS.primary}10`,
-    borderLeftWidth: 4,
-    borderLeftColor: COLORS.primary,
-  },
-  noticeHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: SPACING.sm,
-  },
-  noticeTitle: {
-    fontSize: FONT_SIZES.md,
-    fontWeight: '600',
-    color: COLORS.text.primary,
-    marginLeft: SPACING.sm,
-  },
-  noticeText: {
-    fontSize: FONT_SIZES.sm,
-    color: COLORS.text.secondary,
-    lineHeight: 18,
-  },
 });
+
+export default AdminDashboardScreen;
