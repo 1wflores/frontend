@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { reservationService } from '../services/reservationService';
-import { useAuth } from '../contexts/AuthContext';
+import { useAuth } from './useAuth';
 import debounce from 'lodash.debounce';
 
 export const useReservations = () => {

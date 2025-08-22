@@ -68,6 +68,11 @@ class ApiClient {
           throw new Error('No internet connection');
         }
 
+        // ✅ FIXED: Ensure headers object exists before setting Authorization
+        if (!config.headers) {
+          config.headers = {};
+        }
+
         if (this.authToken) {
           config.headers.Authorization = `Bearer ${this.authToken}`;
         }
@@ -81,6 +86,7 @@ class ApiClient {
             url: config.url,
             data: config.data,
             requestId: config.headers['X-Request-ID'],
+            headers: config.headers,
           });
         }
         
@@ -113,94 +119,57 @@ class ApiClient {
             status: error.response?.status,
             url: error.config?.url,
             data: error.response?.data,
-            requestId: error.config?.headers['X-Request-ID'],
+            message: error.message,
+            requestId: error.config?.headers?.['X-Request-ID'],
           });
         }
 
-        // Handle token expiration
-        if (error.response?.status === 401 && !originalRequest._retry) {
-          if (error.response.data?.code === 'TOKEN_EXPIRED') {
-            originalRequest._retry = true;
-            
-            if (!this.isRefreshing) {
-              this.isRefreshing = true;
-              
-              try {
-                // Attempt to refresh token or re-authenticate
-                await this.handleTokenRefresh();
-                
-                // Retry original request
-                return this.client(originalRequest);
-              } catch (refreshError) {
-                await this.handleAuthError();
-                return Promise.reject(refreshError);
-              } finally {
-                this.isRefreshing = false;
-              }
-            }
-            
-            // Wait for token refresh to complete
-            return new Promise((resolve, reject) => {
-              this.subscribers.push({
-                resolve: () => resolve(this.client(originalRequest)),
-                reject
-              });
-            });
-          } else {
-            await this.handleAuthError();
+        // Handle network errors
+        if (!error.response) {
+          const netInfo = await NetInfo.fetch();
+          if (!netInfo.isConnected) {
+            throw new Error('No internet connection');
           }
+          throw new Error('Network error occurred');
         }
 
-        // Handle network errors with retry
-        if (!error.response && !originalRequest._retried) {
-          originalRequest._retried = true;
+        // Handle 401 unauthorized errors
+        if (error.response?.status === 401 && !originalRequest._retry) {
+          originalRequest._retry = true;
           
-          return new Promise((resolve, reject) => {
-            this.requestQueue.push({
-              config: originalRequest,
-              resolve,
-              reject
-            });
-            
-            Alert.alert(
-              'Network Error',
-              'Request queued. Will retry when connection is restored.',
-              [{ text: 'OK' }]
-            );
-          });
+          // Clear auth data and force re-login
+          this.setAuthToken(null);
+          await StorageService.clearAuthData();
+          
+          throw new Error('Session expired. Please login again.');
         }
 
-        // Handle specific error codes
-        if (error.response?.status === 429) {
-          Alert.alert(
-            'Too Many Requests',
-            'Please slow down and try again later.',
-            [{ text: 'OK' }]
-          );
+        // Handle 403 forbidden errors
+        if (error.response?.status === 403) {
+          throw new Error('Access denied. Insufficient permissions.');
         }
 
-        return Promise.reject(error);
+        // Handle server errors
+        if (error.response?.status >= 500) {
+          this.showNetworkErrorAlert();
+          throw new Error('Server error occurred. Please try again later.');
+        }
+
+        // Handle validation errors
+        if (error.response?.status === 400) {
+          const message = error.response?.data?.message || 'Bad request';
+          throw new Error(message);
+        }
+
+        throw error;
       }
     );
   }
 
-  async handleTokenRefresh() {
-    // Implement token refresh logic here
-    // This is a placeholder - implement based on your auth strategy
-    throw new Error('Token refresh not implemented');
-  }
-
-  async handleAuthError() {
-    this.authToken = null;
-    await StorageService.clearAuthData();
-    
-    // Notify subscribers
-    this.subscribers.forEach(s => s.reject(new Error('Authentication failed')));
-    this.subscribers = [];
-    
+  showNetworkErrorAlert() {
     Alert.alert(
-      'Session Expired',
-      'Please log in again.',
+      'Network Error',
+      'Unable to connect to the server. Please check your internet connection and try again.',
       [{ text: 'OK' }]
     );
   }
@@ -209,8 +178,42 @@ class ApiClient {
     return `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
   }
 
+  // ✅ ENHANCED: Better token management with error handling
   setAuthToken(token) {
     this.authToken = token;
+    
+    try {
+      // Ensure defaults and headers objects exist
+      if (!this.client.defaults) {
+        this.client.defaults = {};
+      }
+      if (!this.client.defaults.headers) {
+        this.client.defaults.headers = {};
+      }
+      if (!this.client.defaults.headers.common) {
+        this.client.defaults.headers.common = {};
+      }
+
+      if (token) {
+        this.client.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+        console.log('✅ Auth token set in API client');
+      } else {
+        delete this.client.defaults.headers.common['Authorization'];
+        console.log('✅ Auth token cleared from API client');
+      }
+    } catch (error) {
+      console.error('❌ Error setting auth token:', error);
+    }
+  }
+
+  // ✅ NEW: Method to get current auth token
+  getAuthToken() {
+    return this.authToken;
+  }
+
+  // ✅ NEW: Method to check if authenticated
+  isAuthenticated() {
+    return !!this.authToken;
   }
 
   // HTTP Methods with enhanced error handling

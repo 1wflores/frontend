@@ -1,17 +1,12 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useState, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { apiClient } from '../services/apiClient';
-import { logger } from '../utils/logger';
 
+// ✅ FIXED: Create context but DON'T export useAuth from here
 const AuthContext = createContext({});
 
-export const useAuth = () => {
-  const context = useContext(AuthContext);
-  if (!context) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
-  return context;
-};
+// ✅ ONLY export the context, not the hook
+export { AuthContext };
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
@@ -40,10 +35,11 @@ export const AuthProvider = ({ children }) => {
           console.log('✅ Found stored auth data for user:', parsedUser.username);
           
           // Set the token in API client
-          apiClient.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+          apiClient.setAuthToken(token);
           
           // Verify token is still valid by making a test request
-          await apiClient.get('/api/auth/verify');
+          // Use profile endpoint since verify endpoint might not exist yet
+          await apiClient.get('/api/auth/profile');
           
           // Token is valid, set user
           setUser(parsedUser);
@@ -69,7 +65,9 @@ export const AuthProvider = ({ children }) => {
       console.log('🔄 Attempting login for:', credentials.username);
       
       const response = await apiClient.post('/api/auth/login', credentials);
-      const { token, user: userData } = response.data;
+      
+      // ✅ FIXED: Access the correct response structure
+      const { token, user: userData } = response.data.data;
 
       if (!token || !userData) {
         throw new Error('Invalid response from server');
@@ -81,8 +79,8 @@ export const AuthProvider = ({ children }) => {
         AsyncStorage.setItem('userData', JSON.stringify(userData))
       ]);
 
-      // Set authorization header
-      apiClient.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+      // Set authorization header using the apiClient method
+      apiClient.setAuthToken(token);
 
       // Update state
       setUser(userData);
@@ -99,7 +97,6 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  // FIXED: Enhanced logout with proper cleanup and navigation reset
   const logout = async () => {
     try {
       console.log('🔄 Starting logout process...');
@@ -129,7 +126,7 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  // FIXED: Enhanced clearAuthData with better error handling
+  // ✅ FIXED: Enhanced clearAuthData with better error handling
   const clearAuthData = async () => {
     try {
       console.log('🧹 Clearing auth data...');
@@ -137,8 +134,8 @@ export const AuthProvider = ({ children }) => {
       // Clear state first (immediate UI update)
       setUser(null);
       
-      // Remove authorization header
-      delete apiClient.defaults.headers.common['Authorization'];
+      // ✅ FIXED: Use the apiClient method to clear token
+      apiClient.setAuthToken(null);
       
       // Clear storage
       await Promise.all([
@@ -154,6 +151,12 @@ export const AuthProvider = ({ children }) => {
       console.error('❌ Error clearing auth data:', error);
       // Force clear state even if storage clearing fails
       setUser(null);
+      // Try to clear token even if other operations failed
+      try {
+        apiClient.setAuthToken(null);
+      } catch (tokenError) {
+        console.error('❌ Error clearing token:', tokenError);
+      }
     }
   };
 
@@ -179,7 +182,8 @@ export const AuthProvider = ({ children }) => {
       if (!user) return null;
       
       const response = await apiClient.get('/api/auth/profile');
-      const updatedUser = response.data;
+      // ✅ FIXED: Access the correct response structure
+      const updatedUser = response.data.data.user;
       
       await updateUser(updatedUser);
       return updatedUser;
