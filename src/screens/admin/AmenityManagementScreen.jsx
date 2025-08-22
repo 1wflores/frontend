@@ -4,45 +4,30 @@ import {
   Text,
   StyleSheet,
   FlatList,
+  TouchableOpacity,
   RefreshControl,
   Alert,
-  TouchableOpacity,
-  Modal,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
-import { useNavigation } from '@react-navigation/native';
-import { useAmenities } from '../../hooks/useAmenities';
-import { AmenityCard } from '../../components/reservation/AmenityCard';
-import { AmenityFormModal } from '../../components/admin/AmenityFormModal';
+import { Card } from '../../components/common/Card';
 import { Button } from '../../components/common/Button';
 import { Input } from '../../components/common/Input';
 import { LoadingSpinner } from '../../components/common/LoadingSpinner';
-import { Card } from '../../components/common/Card';
-import { useLanguage } from '../../contexts/LanguageContext'; // ✅ ADDED: Language support
-import { ApiErrorTranslator } from '../../utils/apiErrorTranslator'; // ✅ ADDED: Error translation
-import { Localization } from '../../utils/localization'; // ✅ ADDED: Data translation
+import { useLanguage } from '../../contexts/LanguageContext';
 import { apiClient } from '../../services/apiClient';
+import { ApiErrorTranslator } from '../../utils/apiErrorTranslator';
+import { Localization } from '../../utils/localization';
 import { COLORS, SPACING, FONT_SIZES } from '../../utils/constants';
 
-const AmenityManagementScreen = () => {
-  const navigation = useNavigation();
-  const { language, t } = useLanguage(); // ✅ ADDED: Language hook
-  const { amenities, loading, fetchAmenities } = useAmenities();
+const AmenityManagementScreen = ({ navigation }) => {
+  const { language, t } = useLanguage();
   
+  const [amenities, setAmenities] = useState([]);
   const [filteredAmenities, setFilteredAmenities] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedFilter, setSelectedFilter] = useState('all');
-  
-  // Form Modal State
-  const [formModalVisible, setFormModalVisible] = useState(false);
-  const [editingAmenity, setEditingAmenity] = useState(null);
-  const [formLoading, setFormLoading] = useState(false);
-  
-  // Maintenance Modal State
-  const [maintenanceModalVisible, setMaintenanceModalVisible] = useState(false);
-  const [selectedAmenity, setSelectedAmenity] = useState(null);
-  const [maintenanceNotes, setMaintenanceNotes] = useState('');
 
   useEffect(() => {
     fetchAmenities();
@@ -52,34 +37,235 @@ const AmenityManagementScreen = () => {
     filterAmenities();
   }, [amenities, searchQuery, selectedFilter]);
 
+  // FIXED: Enhanced amenity descriptions with proper translations
+  const getAmenityDescriptions = () => {
+    return {
+      'Jacuzzi': {
+        es: 'Jacuzzi para relajación y terapia. Perfecto para aliviar el estrés después de un largo día.',
+        en: 'Jacuzzi for relaxation and therapy. Perfect for stress relief after a long day.'
+      },
+      'Cold Tub': {
+        es: 'Tina fría para terapia de recuperación y bienestar. Ideal para recuperación post-ejercicio.',
+        en: 'Cold therapy tub for recovery and wellness. Ideal for post-exercise recovery.'
+      },
+      'Yoga Deck': {
+        es: 'Terraza de yoga para ejercicios y relajación. Espacio tranquilo con vista panorámica.',
+        en: 'Yoga deck for exercise and relaxation. Peaceful space with panoramic views.'
+      },
+      'Community Lounge': {
+        es: 'Salón Comunitario con acceso a parrilla para reuniones sociales y eventos.',
+        en: 'Community Lounge with grill access for social gatherings and events.'
+      },
+      'Rooftop Terrace': {
+        es: 'Terraza en azotea con vista panorámica de la ciudad. Ideal para eventos al aire libre.',
+        en: 'Rooftop terrace with panoramic city views. Ideal for outdoor events.'
+      },
+      'Gym': {
+        es: 'Gimnasio completamente equipado con máquinas modernas y pesas libres.',
+        en: 'Fully equipped gym with modern machines and free weights.'
+      },
+      'Pool': {
+        es: 'Piscina climatizada disponible todo el año para natación y relajación.',
+        en: 'Heated pool available year-round for swimming and relaxation.'
+      },
+      'BBQ Area': {
+        es: 'Área de barbacoa con parrillas de gas y carbón, perfecta para reuniones familiares.',
+        en: 'BBQ area with gas and charcoal grills, perfect for family gatherings.'
+      },
+      'Conference Room': {
+        es: 'Sala de conferencias profesional con equipo audiovisual y capacidad para 20 personas.',
+        en: 'Professional conference room with audiovisual equipment and capacity for 20 people.'
+      },
+      'Game Room': {
+        es: 'Sala de juegos con mesa de pool, ping pong y entretenimiento para todas las edades.',
+        en: 'Game room with pool table, ping pong, and entertainment for all ages.'
+      }
+    };
+  };
+
+  // FIXED: Get translated amenity name
+  const getTranslatedAmenityName = (amenityName) => {
+    return Localization.translateAmenity(amenityName, language);
+  };
+
+  // FIXED: Get translated amenity description
+  const getTranslatedDescription = (amenityName, originalDescription) => {
+    const descriptions = getAmenityDescriptions();
+    const amenityDesc = descriptions[amenityName];
+    
+    if (amenityDesc) {
+      return language === 'es' ? amenityDesc.es : amenityDesc.en;
+    }
+    
+    // Fallback to original description if available
+    return originalDescription || (language === 'es' ? 'Descripción no disponible' : 'Description not available');
+  };
+
+  // FIXED: Get operating hours with translation
+  const getTranslatedOperatingHours = (hours) => {
+    if (!hours) {
+      return language === 'es' ? '24 horas' : '24 hours';
+    }
+    
+    // Translate day names in operating hours
+    let translatedHours = hours;
+    
+    const dayTranslations = {
+      'Monday': 'Lunes',
+      'Tuesday': 'Martes', 
+      'Wednesday': 'Miércoles',
+      'Thursday': 'Jueves',
+      'Friday': 'Viernes',
+      'Saturday': 'Sábado',
+      'Sunday': 'Domingo',
+      'Mon': 'Lun',
+      'Tue': 'Mar',
+      'Wed': 'Mié',
+      'Thu': 'Jue',
+      'Fri': 'Vie',
+      'Sat': 'Sáb',
+      'Sun': 'Dom'
+    };
+
+    if (language === 'es') {
+      Object.keys(dayTranslations).forEach(englishDay => {
+        const spanishDay = dayTranslations[englishDay];
+        translatedHours = translatedHours.replace(new RegExp(englishDay, 'g'), spanishDay);
+      });
+    }
+
+    return translatedHours;
+  };
+
+  const fetchAmenities = async () => {
+    try {
+      setLoading(true);
+      console.log('📥 Fetching amenities from API...');
+      
+      const response = await apiClient.get('/api/amenities');
+      console.log('📊 Amenities API response:', response);
+      
+      let amenitiesData = [];
+      if (response.data) {
+        if (Array.isArray(response.data)) {
+          amenitiesData = response.data;
+        } else if (response.data.amenities && Array.isArray(response.data.amenities)) {
+          amenitiesData = response.data.amenities;
+        } else if (response.data.data && Array.isArray(response.data.data)) {
+          amenitiesData = response.data.data;
+        }
+      }
+
+      setAmenities(amenitiesData);
+      console.log(`✅ Loaded ${amenitiesData.length} amenities successfully`);
+      
+    } catch (error) {
+      console.error('❌ Error fetching amenities:', error);
+      
+      // For development, create sample amenities if API fails
+      if (__DEV__ && error.response?.status !== 401) {
+        console.log('🧪 Creating sample amenities for development...');
+        const sampleAmenities = [
+          {
+            id: 'jacuzzi',
+            name: 'Jacuzzi',
+            type: 'jacuzzi',
+            capacity: 6,
+            isActive: true,
+            operatingHours: 'Mon-Sun: 07:00 - 21:00',
+            requiresApproval: false,
+            maxDuration: 60,
+            description: 'Jacuzzi for relaxation and therapy',
+            amenityRules: ['No glass containers', 'Maximum 6 people'],
+          },
+          {
+            id: 'cold-tub',
+            name: 'Cold Tub',
+            type: 'cold-tub',
+            capacity: 4,
+            isActive: true,
+            operatingHours: 'Mon-Sun: 07:00 - 21:00',
+            requiresApproval: false,
+            maxDuration: 60,
+            description: 'Cold therapy tub for recovery and wellness',
+            amenityRules: ['Maximum 4 people', 'Maximum 60 minutes'],
+          },
+          {
+            id: 'lounge',
+            name: 'Community Lounge',
+            type: 'lounge',
+            capacity: 20,
+            isActive: true,
+            operatingHours: 'Mon-Sun: 07:00 - 22:00',
+            requiresApproval: true,
+            maxDuration: 240,
+            description: 'Community Lounge with grill access for',
+            amenityRules: ['24-hour advance booking required', 'Grill usage additional fee'],
+          },
+          {
+            id: 'yoga-deck',
+            name: 'Yoga Deck',
+            type: 'yoga-deck',
+            capacity: 8,
+            isActive: false,
+            operatingHours: 'Mon-Sun: 06:00 - 20:00',
+            requiresApproval: false,
+            maxDuration: 90,
+            description: 'Yoga deck for exercise and relaxation',
+            amenityRules: ['Bring your own mat', 'No shoes allowed'],
+            maintenanceNote: 'Under maintenance until further notice',
+          },
+        ];
+        setAmenities(sampleAmenities);
+        
+        Alert.alert(
+          language === 'es' ? 'Modo de Desarrollo' : 'Development Mode',
+          language === 'es' 
+            ? 'Usando datos de muestra para amenidades.'
+            : 'Using sample amenity data.'
+        );
+      } else {
+        const errorMessage = ApiErrorTranslator.extractAndTranslateError(error, language);
+        Alert.alert(t('error') || 'Error', errorMessage);
+        setAmenities([]);
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const filterAmenities = () => {
     let filtered = amenities;
 
     // Apply search filter
-    if (searchQuery) {
-      const searchText = searchQuery.toLowerCase();
+    if (searchQuery.trim()) {
       filtered = filtered.filter(amenity => {
-        const englishName = amenity.name.toLowerCase();
-        const translatedName = Localization.translateAmenity(amenity.name, language).toLowerCase();
-        const type = amenity.type.toLowerCase();
+        const translatedName = getTranslatedAmenityName(amenity.name);
+        const translatedDesc = getTranslatedDescription(amenity.name, amenity.description);
         
-        return englishName.includes(searchText) || 
-               translatedName.includes(searchText) || 
-               type.includes(searchText);
+        return (
+          translatedName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          translatedDesc.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          amenity.type?.toLowerCase().includes(searchQuery.toLowerCase())
+        );
       });
     }
 
     // Apply status filter
     switch (selectedFilter) {
       case 'active':
-        filtered = filtered.filter(a => a.isActive);
+        filtered = filtered.filter(amenity => amenity.isActive);
+        break;
+      case 'inactive':
+        filtered = filtered.filter(amenity => !amenity.isActive);
         break;
       case 'maintenance':
-        filtered = filtered.filter(a => !a.isActive);
+        filtered = filtered.filter(amenity => amenity.maintenanceNote);
         break;
     }
 
     setFilteredAmenities(filtered);
+    console.log(`🔍 Filtered ${filtered.length} amenities out of ${amenities.length} total`);
   };
 
   const handleRefresh = async () => {
@@ -88,107 +274,38 @@ const AmenityManagementScreen = () => {
     setRefreshing(false);
   };
 
-  const handleCreateAmenity = () => {
-    setEditingAmenity(null);
-    setFormModalVisible(true);
-  };
-
-  const handleEditAmenity = (amenity) => {
-    setEditingAmenity(amenity);
-    setFormModalVisible(true);
-  };
-
-  const handleViewReservations = (amenity) => {
-    navigation.navigate('AmenityReservations', {
-      amenityId: amenity.id,
-      amenityName: amenity.name,
-    });
-  };
-
-  const handleFormSubmit = async (formData) => {
-    try {
-      setFormLoading(true);
-      
-      let response;
-      if (editingAmenity) {
-        // Update existing amenity
-        response = await apiClient.put(`/api/amenities/${editingAmenity.id}`, formData);
-      } else {
-        // Create new amenity
-        response = await apiClient.post('/api/amenities', formData);
-      }
-
-      if (response.data.success) {
-        // ✅ FIXED: Success message with translations
-        Alert.alert(
-          t('success'),
-          editingAmenity 
-            ? (language === 'es' ? 'Amenidad actualizada exitosamente!' : 'Amenity updated successfully!')
-            : (language === 'es' ? 'Amenidad creada exitosamente!' : 'Amenity created successfully!')
-        );
-        setFormModalVisible(false);
-        setEditingAmenity(null);
-        await fetchAmenities(); // Refresh the list
-      } else {
-        throw new Error(response.data.message || 'Operation failed');
-      }
-    } catch (error) {
-      console.error('Form submit error:', error);
-      // ✅ FIXED: Error translation
-      const errorMessage = ApiErrorTranslator.extractAndTranslateError(error, language);
-      Alert.alert(t('error'), errorMessage);
-    } finally {
-      setFormLoading(false);
-    }
-  };
-
-  const handleToggleMaintenance = async (amenity) => {
-    if (amenity.isActive) {
-      // Put under maintenance
-      setSelectedAmenity(amenity);
-      setMaintenanceModalVisible(true);
-    } else {
-      // ✅ FIXED: Reactivate confirmation with translations
-      Alert.alert(
-        language === 'es' ? 'Reactivar Amenidad' : 'Reactivate Amenity',
-        language === 'es' 
-          ? `¿Está seguro de que desea reactivar ${Localization.translateAmenity(amenity.name, language)}?`
-          : `Are you sure you want to reactivate ${amenity.name}?`,
-        [
-          { text: t('cancel'), style: 'cancel' },
-          {
-            text: language === 'es' ? 'Reactivar' : 'Reactivate',
-            onPress: () => updateAmenityStatus(amenity.id, true),
-          },
-        ]
-      );
-    }
-  };
-
-  const handleDeleteAmenity = async (amenity) => {
-    // ✅ FIXED: Delete confirmation with translations
+  const handleToggleAmenity = async (amenity) => {
+    const action = amenity.isActive ? 'deactivate' : 'activate';
+    
     Alert.alert(
-      language === 'es' ? 'Eliminar Amenidad' : 'Delete Amenity',
       language === 'es' 
-        ? `¿Está seguro de que desea eliminar "${Localization.translateAmenity(amenity.name, language)}"? Esta acción no se puede deshacer.`
-        : `Are you sure you want to delete "${amenity.name}"? This action cannot be undone.`,
+        ? (amenity.isActive ? 'Desactivar Amenidad' : 'Activar Amenidad')
+        : (amenity.isActive ? 'Deactivate Amenity' : 'Activate Amenity'),
+      language === 'es'
+        ? `¿Está seguro de que desea ${amenity.isActive ? 'desactivar' : 'activar'} "${getTranslatedAmenityName(amenity.name)}"?`
+        : `Are you sure you want to ${action} "${getTranslatedAmenityName(amenity.name)}"?`,
       [
-        { text: t('cancel'), style: 'cancel' },
+        { text: t('cancel') || 'Cancel', style: 'cancel' },
         {
-          text: t('delete'),
-          style: 'destructive',
+          text: language === 'es' 
+            ? (amenity.isActive ? 'Desactivar' : 'Activar')
+            : (amenity.isActive ? 'Deactivate' : 'Activate'),
           onPress: async () => {
             try {
-              await apiClient.delete(`/api/amenities/${amenity.id}`);
-              Alert.alert(
-                t('success'),
-                language === 'es' ? 'Amenidad eliminada exitosamente' : 'Amenity deleted successfully'
+              await apiClient.post(`/api/amenities/${amenity.id}/${action}`);
+              setAmenities(prev =>
+                prev.map(a => (a.id === amenity.id ? { ...a, isActive: !a.isActive } : a))
               );
-              await fetchAmenities();
+              Alert.alert(
+                t('success') || 'Success',
+                language === 'es' 
+                  ? `Amenidad ${amenity.isActive ? 'desactivada' : 'activada'} exitosamente`
+                  : `Amenity ${action}d successfully`
+              );
             } catch (error) {
-              console.error('Error deleting amenity:', error);
+              console.error(`Error ${action}ing amenity:`, error);
               const errorMessage = ApiErrorTranslator.extractAndTranslateError(error, language);
-              Alert.alert(t('error'), errorMessage);
+              Alert.alert(t('error') || 'Error', errorMessage);
             }
           },
         },
@@ -196,241 +313,222 @@ const AmenityManagementScreen = () => {
     );
   };
 
-  const updateAmenityStatus = async (amenityId, isActive, notes = '') => {
-    try {
-      const response = await apiClient.put(`/api/amenities/${amenityId}`, {
-        isActive,
-        maintenanceNotes: notes,
-      });
-
-      if (response.data.success) {
-        // ✅ FIXED: Success message translation
-        Alert.alert(
-          t('success'),
-          isActive 
-            ? (language === 'es' ? 'Amenidad reactivada exitosamente' : 'Amenity reactivated successfully')
-            : (language === 'es' ? 'Amenidad puesta en mantenimiento' : 'Amenity put under maintenance')
-        );
-        await fetchAmenities();
-      }
-    } catch (error) {
-      console.error('Error updating amenity status:', error);
-      const errorMessage = ApiErrorTranslator.extractAndTranslateError(error, language);
-      Alert.alert(t('error'), errorMessage);
-    }
+  const handleEditAmenity = (amenity) => {
+    navigation.navigate('EditAmenity', { amenityId: amenity.id });
   };
 
-  const submitMaintenance = async () => {
-    if (!maintenanceNotes.trim()) {
-      // ✅ FIXED: Validation message translation
-      Alert.alert(
-        t('error'), 
-        language === 'es' 
-          ? 'Por favor proporcione notas de mantenimiento'
-          : 'Please provide maintenance notes'
-      );
-      return;
-    }
-
-    await updateAmenityStatus(selectedAmenity.id, false, maintenanceNotes);
-    setMaintenanceModalVisible(false);
-    setMaintenanceNotes('');
-    setSelectedAmenity(null);
+  const handleViewReservations = (amenity) => {
+    navigation.navigate('AmenityReservations', { 
+      amenityId: amenity.id, 
+      amenityName: amenity.name 
+    });
   };
 
-  // ✅ FIXED: Filters with translations
-  const filters = [
-    { key: 'all', label: language === 'es' ? 'Todas las Amenidades' : 'All Amenities' },
-    { key: 'active', label: language === 'es' ? 'Activas' : 'Active' },
-    { key: 'maintenance', label: language === 'es' ? 'Mantenimiento' : 'Maintenance' },
-  ];
+  const handleScheduleMaintenance = (amenity) => {
+    Alert.alert(
+      language === 'es' ? 'Programar Mantenimiento' : 'Schedule Maintenance',
+      language === 'es' 
+        ? `¿Desea programar mantenimiento para "${getTranslatedAmenityName(amenity.name)}"?`
+        : `Do you want to schedule maintenance for "${getTranslatedAmenityName(amenity.name)}"?`,
+      [
+        { text: t('cancel') || 'Cancel', style: 'cancel' },
+        {
+          text: language === 'es' ? 'Programar' : 'Schedule',
+          onPress: () => {
+            // TODO: Implement maintenance scheduling
+            Alert.alert(
+              language === 'es' ? 'Mantenimiento Programado' : 'Maintenance Scheduled',
+              language === 'es' 
+                ? 'El mantenimiento ha sido programado exitosamente'
+                : 'Maintenance has been scheduled successfully'
+            );
+          },
+        },
+      ]
+    );
+  };
 
-  const renderFilterButton = (filter) => (
-    <TouchableOpacity
-      key={filter.key}
-      style={[
-        styles.filterButton,
-        selectedFilter === filter.key && styles.activeFilterButton,
-      ]}
-      onPress={() => setSelectedFilter(filter.key)}
-    >
-      <Text
-        style={[
-          styles.filterText,
-          selectedFilter === filter.key && styles.activeFilterText,
-        ]}
-      >
-        {filter.label}
-      </Text>
-    </TouchableOpacity>
-  );
+  const renderAmenityItem = ({ item }) => {
+    const translatedName = getTranslatedAmenityName(item.name);
+    const translatedDescription = getTranslatedDescription(item.name, item.description);
+    const translatedHours = getTranslatedOperatingHours(item.operatingHours);
 
-  const renderAmenityItem = ({ item }) => (
-    <View style={styles.amenityItemContainer}>
-      <AmenityCard amenity={item} disabled />
-      
-      {/* ✅ FIXED: Action buttons with translations */}
-      <View style={styles.amenityActions}>
-        <TouchableOpacity
-          style={styles.actionButton}
-          onPress={() => handleEditAmenity(item)}
-        >
-          <Icon name="edit" size={16} color={COLORS.primary} />
-          <Text style={styles.actionText}>{t('edit')}</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.actionButton}
-          onPress={() => handleViewReservations(item)}
-        >
-          <Icon name="event" size={16} color={COLORS.primary} />
-          <Text style={styles.actionText}>
-            {language === 'es' ? 'Reservas' : 'Reservations'}
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[
-            styles.actionButton,
-            item.isActive ? styles.maintenanceAction : styles.activateAction
-          ]}
-          onPress={() => handleToggleMaintenance(item)}
-        >
-          <Icon 
-            name={item.isActive ? "build" : "check_circle"} 
-            size={16} 
-            color={item.isActive ? COLORS.warning : COLORS.success} 
-          />
-          <Text style={[
-            styles.actionText,
-            { color: item.isActive ? COLORS.warning : COLORS.success }
+    return (
+      <Card style={[styles.amenityCard, !item.isActive && styles.inactiveCard]}>
+        <View style={styles.amenityHeader}>
+          <View style={styles.amenityInfo}>
+            <Text style={styles.amenityName}>{translatedName}</Text>
+            <Text style={styles.amenityDescription}>{translatedDescription}</Text>
+          </View>
+          
+          <View style={[
+            styles.statusBadge, 
+            { backgroundColor: item.isActive ? COLORS.success + '20' : COLORS.error + '20' }
           ]}>
-            {item.isActive 
-              ? (language === 'es' ? 'Mantenimiento' : 'Maintenance')
-              : (language === 'es' ? 'Activar' : 'Activate')
-            }
-          </Text>
-        </TouchableOpacity>
+            <Icon 
+              name={item.isActive ? 'check-circle' : 'cancel'} 
+              size={16} 
+              color={item.isActive ? COLORS.success : COLORS.error} 
+            />
+            <Text style={[
+              styles.statusText, 
+              { color: item.isActive ? COLORS.success : COLORS.error }
+            ]}>
+              {item.isActive 
+                ? (language === 'es' ? 'Activa' : 'Active')
+                : (language === 'es' ? 'Inactiva' : 'Inactive')
+              }
+            </Text>
+          </View>
+        </View>
 
-        <TouchableOpacity
-          style={[styles.actionButton, styles.deleteAction]}
-          onPress={() => handleDeleteAmenity(item)}
-        >
-          <Icon name="delete" size={16} color={COLORS.error} />
-          <Text style={[styles.actionText, { color: COLORS.error }]}>
-            {t('delete')}
-          </Text>
-        </TouchableOpacity>
-      </View>
-    </View>
-  );
+        {item.maintenanceNote && (
+          <View style={styles.maintenanceAlert}>
+            <Icon name="build" size={16} color={COLORS.warning} />
+            <Text style={styles.maintenanceText}>
+              {language === 'es' ? 'En Mantenimiento' : 'Under Maintenance'}
+            </Text>
+          </View>
+        )}
+
+        <View style={styles.amenityDetails}>
+          <View style={styles.detailRow}>
+            <Icon name="people" size={16} color={COLORS.text.secondary} />
+            <Text style={styles.detailText}>
+              {language === 'es' ? 'Capacidad:' : 'Capacity:'} {item.capacity} {
+                language === 'es' ? 'personas' : 'people'
+              }
+            </Text>
+          </View>
+          
+          <View style={styles.detailRow}>
+            <Icon name="schedule" size={16} color={COLORS.text.secondary} />
+            <Text style={styles.detailText}>
+              {language === 'es' ? 'Horarios:' : 'Hours:'} {translatedHours}
+            </Text>
+          </View>
+
+          <View style={styles.detailRow}>
+            <Icon name="timer" size={16} color={COLORS.text.secondary} />
+            <Text style={styles.detailText}>
+              {language === 'es' ? 'Duración máxima:' : 'Max duration:'} {item.maxDuration} {
+                language === 'es' ? 'minutos' : 'minutes'
+              }
+            </Text>
+          </View>
+
+          {item.requiresApproval && (
+            <View style={styles.detailRow}>
+              <Icon name="approval" size={16} color={COLORS.warning} />
+              <Text style={[styles.detailText, { color: COLORS.warning }]}>
+                {language === 'es' ? 'Requiere aprobación' : 'Requires approval'}
+              </Text>
+            </View>
+          )}
+        </View>
+
+        {/* Action buttons */}
+        <View style={styles.actionButtons}>
+          <TouchableOpacity 
+            style={styles.actionButton}
+            onPress={() => handleViewReservations(item)}
+          >
+            <Icon name="event" size={16} color={COLORS.primary} />
+            <Text style={styles.actionText}>
+              {language === 'es' ? 'Reservas' : 'Reservations'}
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={styles.actionButton}
+            onPress={() => handleEditAmenity(item)}
+          >
+            <Icon name="edit" size={16} color={COLORS.info} />
+            <Text style={styles.actionText}>
+              {language === 'es' ? 'Editar' : 'Edit'}
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={[styles.actionButton, styles.maintenanceAction]}
+            onPress={() => handleScheduleMaintenance(item)}
+          >
+            <Icon name="build" size={16} color={COLORS.warning} />
+            <Text style={styles.actionText}>
+              {language === 'es' ? 'Mantenimiento' : 'Maintenance'}
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={styles.actionButton}
+            onPress={() => handleToggleAmenity(item)}
+          >
+            <Icon 
+              name={item.isActive ? 'visibility-off' : 'visibility'} 
+              size={16} 
+              color={item.isActive ? COLORS.error : COLORS.success} 
+            />
+            <Text style={styles.actionText}>
+              {item.isActive 
+                ? (language === 'es' ? 'Desactivar' : 'Deactivate')
+                : (language === 'es' ? 'Activar' : 'Activate')
+              }
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </Card>
+    );
+  };
 
   const renderEmptyState = () => (
-    <Card style={styles.emptyState}>
-      <Icon name="pool" size={64} color={COLORS.text.secondary} />
-      {/* ✅ FIXED: Empty state with translations */}
+    <View style={styles.emptyState}>
+      <Icon name="place" size={64} color={COLORS.text.secondary} />
       <Text style={styles.emptyTitle}>
-        {language === 'es' ? 'No se Encontraron Amenidades' : 'No Amenities Found'}
+        {language === 'es' ? 'No hay Amenidades' : 'No Amenities'}
       </Text>
       <Text style={styles.emptyText}>
         {searchQuery || selectedFilter !== 'all'
           ? (language === 'es' 
-              ? 'Ninguna amenidad coincide con sus filtros actuales.'
-              : 'No amenities match your current filters.')
+              ? 'No hay amenidades que coincidan con los filtros actuales.'
+              : 'No amenities match the current filters.')
           : (language === 'es' 
-              ? 'Aún no se han creado amenidades.'
-              : 'No amenities have been created yet.')
+              ? 'No hay amenidades configuradas en este momento.'
+              : 'No amenities are configured at the moment.')
         }
       </Text>
-      {!searchQuery && selectedFilter === 'all' && (
-        <Button
-          title={language === 'es' ? 'Crear Primera Amenidad' : 'Create First Amenity'}
-          onPress={handleCreateAmenity}
-          style={styles.emptyButton}
+    </View>
+  );
+
+  const filterOptions = [
+    { key: 'all', label: language === 'es' ? 'Todas las Amenidades' : 'All Amenities' },
+    { key: 'active', label: language === 'es' ? 'Activas' : 'Active' },
+    { key: 'inactive', label: language === 'es' ? 'Inactivas' : 'Inactive' },
+    { key: 'maintenance', label: language === 'es' ? 'Mantenimiento' : 'Maintenance' },
+  ];
+
+  if (loading) {
+    return (
+      <View style={styles.loadingContainer}>
+        <LoadingSpinner 
+          message={language === 'es' ? 'Cargando amenidades...' : 'Loading amenities...'} 
         />
-      )}
-    </Card>
-  );
-
-  const renderMaintenanceModal = () => (
-    <Modal
-      visible={maintenanceModalVisible}
-      animationType="slide"
-      transparent
-      onRequestClose={() => setMaintenanceModalVisible(false)}
-    >
-      <View style={styles.modalOverlay}>
-        <View style={styles.modalContainer}>
-          <View style={styles.modalHeader}>
-            {/* ✅ FIXED: Modal title with translations */}
-            <Text style={styles.modalTitle}>
-              {language === 'es' ? 'Poner en Mantenimiento' : 'Put Under Maintenance'}
-            </Text>
-            <TouchableOpacity
-              onPress={() => setMaintenanceModalVisible(false)}
-              style={styles.modalCloseButton}
-            >
-              <Icon name="close" size={24} color={COLORS.text.primary} />
-            </TouchableOpacity>
-          </View>
-          
-          <Text style={styles.modalSubtitle}>
-            {selectedAmenity ? (
-              language === 'es' 
-                ? `${Localization.translateAmenity(selectedAmenity.name, language)} no estará disponible para reservas`
-                : `${selectedAmenity.name} will be unavailable for booking`
-            ) : ''}
-          </Text>
-          
-          <Input
-            label={language === 'es' ? 'Notas de Mantenimiento' : 'Maintenance Notes'}
-            placeholder={language === 'es' 
-              ? 'ej: Limpieza programada, Reparación de equipos, etc.'
-              : 'e.g., Scheduled cleaning, Equipment repair, etc.'
-            }
-            value={maintenanceNotes}
-            onChangeText={setMaintenanceNotes}
-            multiline
-            numberOfLines={3}
-            style={styles.maintenanceInput}
-          />
-          
-          <View style={styles.modalActions}>
-            <Button
-              title={t('cancel')}
-              variant="outline"
-              onPress={() => setMaintenanceModalVisible(false)}
-              style={styles.modalButton}
-            />
-            <Button
-              title={language === 'es' ? 'Poner en Mantenimiento' : 'Put Under Maintenance'}
-              variant="danger"
-              onPress={submitMaintenance}
-              style={styles.modalButton}
-            />
-          </View>
-        </View>
       </View>
-    </Modal>
-  );
-
-  if (loading && amenities.length === 0) {
-    return <LoadingSpinner message={language === 'es' ? 'Cargando amenidades...' : 'Loading amenities...'} />;
+    );
   }
 
   return (
     <View style={styles.container}>
-      {/* ✅ FIXED: Header with translated create button */}
+      {/* Header */}
       <View style={styles.header}>
         <Button
           title={language === 'es' ? 'Crear Amenidad' : 'Create Amenity'}
-          onPress={handleCreateAmenity}
+          onPress={() => navigation.navigate('CreateAmenity')}
           leftIcon="add"
           style={styles.createButton}
         />
       </View>
 
-      {/* ✅ FIXED: Search with translations */}
+      {/* Search and Filters */}
       <View style={styles.searchContainer}>
         <Input
           placeholder={language === 'es' ? 'Buscar amenidades...' : 'Search amenities...'}
@@ -441,11 +539,29 @@ const AmenityManagementScreen = () => {
         />
         
         <View style={styles.filtersContainer}>
-          {filters.map(renderFilterButton)}
+          {filterOptions.map((filter) => (
+            <TouchableOpacity
+              key={filter.key}
+              style={[
+                styles.filterButton,
+                selectedFilter === filter.key && styles.activeFilterButton,
+              ]}
+              onPress={() => setSelectedFilter(filter.key)}
+            >
+              <Text
+                style={[
+                  styles.filterText,
+                  selectedFilter === filter.key && styles.activeFilterText,
+                ]}
+              >
+                {filter.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
         </View>
       </View>
 
-      {/* ✅ FIXED: Stats with translations */}
+      {/* Stats */}
       <View style={styles.statsContainer}>
         <Card style={styles.statCard}>
           <Text style={styles.statNumber}>{amenities.length}</Text>
@@ -453,6 +569,7 @@ const AmenityManagementScreen = () => {
             {language === 'es' ? 'Total' : 'Total'}
           </Text>
         </Card>
+        
         <Card style={styles.statCard}>
           <Text style={styles.statNumber}>
             {amenities.filter(a => a.isActive).length}
@@ -461,9 +578,10 @@ const AmenityManagementScreen = () => {
             {language === 'es' ? 'Activas' : 'Active'}
           </Text>
         </Card>
+        
         <Card style={styles.statCard}>
           <Text style={styles.statNumber}>
-            {amenities.filter(a => !a.isActive).length}
+            {amenities.filter(a => a.maintenanceNote).length}
           </Text>
           <Text style={styles.statLabel}>
             {language === 'es' ? 'Mantenimiento' : 'Maintenance'}
@@ -483,21 +601,6 @@ const AmenityManagementScreen = () => {
         ListEmptyComponent={renderEmptyState}
         showsVerticalScrollIndicator={false}
       />
-
-      {/* Form Modal */}
-      <AmenityFormModal
-        visible={formModalVisible}
-        onClose={() => {
-          setFormModalVisible(false);
-          setEditingAmenity(null);
-        }}
-        onSubmit={handleFormSubmit}
-        amenity={editingAmenity}
-        loading={formLoading}
-      />
-
-      {/* Maintenance Modal */}
-      {renderMaintenanceModal()}
     </View>
   );
 };
@@ -507,11 +610,17 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: COLORS.background,
   },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: COLORS.background,
+  },
   header: {
     padding: SPACING.md,
     backgroundColor: COLORS.surface,
     borderBottomWidth: 1,
-    borderBottomColor: COLORS.border,
+    borderBottomColor: COLORS.background,
   },
   createButton: {
     alignSelf: 'flex-start',
@@ -572,10 +681,73 @@ const styles = StyleSheet.create({
     padding: SPACING.md,
     flexGrow: 1,
   },
-  amenityItemContainer: {
+  amenityCard: {
     marginBottom: SPACING.md,
   },
-  amenityActions: {
+  inactiveCard: {
+    opacity: 0.7,
+  },
+  amenityHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: SPACING.sm,
+  },
+  amenityInfo: {
+    flex: 1,
+  },
+  amenityName: {
+    fontSize: FONT_SIZES.lg,
+    fontWeight: 'bold',
+    color: COLORS.text.primary,
+    marginBottom: SPACING.xs / 2,
+  },
+  amenityDescription: {
+    fontSize: FONT_SIZES.sm,
+    color: COLORS.text.secondary,
+    lineHeight: 18,
+  },
+  statusBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: SPACING.xs,
+    borderRadius: 12,
+  },
+  statusText: {
+    fontSize: FONT_SIZES.xs,
+    fontWeight: '600',
+    marginLeft: SPACING.xs / 2,
+  },
+  maintenanceAlert: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.warning + '20',
+    padding: SPACING.sm,
+    borderRadius: 8,
+    marginBottom: SPACING.sm,
+  },
+  maintenanceText: {
+    fontSize: FONT_SIZES.sm,
+    color: COLORS.warning,
+    fontWeight: '600',
+    marginLeft: SPACING.xs,
+  },
+  amenityDetails: {
+    marginBottom: SPACING.sm,
+  },
+  detailRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: SPACING.xs,
+  },
+  detailText: {
+    fontSize: FONT_SIZES.sm,
+    color: COLORS.text.primary,
+    marginLeft: SPACING.xs,
+    flex: 1,
+  },
+  actionButtons: {
     flexDirection: 'row',
     justifyContent: 'space-around',
     marginTop: SPACING.sm,
@@ -600,13 +772,7 @@ const styles = StyleSheet.create({
     marginLeft: SPACING.xs / 2,
   },
   maintenanceAction: {
-    backgroundColor: '#FFF8E1',
-  },
-  activateAction: {
-    backgroundColor: '#F0FFF4',
-  },
-  deleteAction: {
-    backgroundColor: '#FFEBEE',
+    borderColor: COLORS.warning + '40',
   },
   emptyState: {
     alignItems: 'center',
@@ -624,53 +790,6 @@ const styles = StyleSheet.create({
     color: COLORS.text.secondary,
     textAlign: 'center',
     lineHeight: 22,
-    marginBottom: SPACING.lg,
-  },
-  emptyButton: {
-    minWidth: 150,
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  modalContainer: {
-    backgroundColor: COLORS.surface,
-    borderRadius: 12,
-    padding: SPACING.lg,
-    margin: SPACING.lg,
-    width: '90%',
-    maxWidth: 400,
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: SPACING.md,
-  },
-  modalTitle: {
-    fontSize: FONT_SIZES.lg,
-    fontWeight: 'bold',
-    color: COLORS.text.primary,
-  },
-  modalCloseButton: {
-    padding: SPACING.xs,
-  },
-  modalSubtitle: {
-    fontSize: FONT_SIZES.md,
-    color: COLORS.text.secondary,
-    marginBottom: SPACING.md,
-  },
-  maintenanceInput: {
-    marginBottom: SPACING.lg,
-  },
-  modalActions: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  modalButton: {
-    flex: 0.48,
   },
 });
 

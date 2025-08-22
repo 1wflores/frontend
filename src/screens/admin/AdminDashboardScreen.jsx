@@ -51,7 +51,7 @@ const AdminDashboardScreen = ({ navigation }) => {
             ? 'Usuario creado para Apartamento 205'
             : 'User created for Apartment 205',
           time: language === 'es' ? 'hace 2h' : '2h ago',
-          icon: 'person-add', // 🚨 FIX: Changed from 'person_add'
+          icon: 'person-add',
           color: COLORS.primary,
         },
         {
@@ -71,7 +71,7 @@ const AdminDashboardScreen = ({ navigation }) => {
             ? `Mantenimiento de ${Localization.translateAmenity('Yoga Deck', language)} programado`
             : 'Yoga Deck maintenance scheduled',
           time: language === 'es' ? 'hace 6h' : '6h ago',
-          icon: 'build', // 🚨 FIX: Changed to 'build' for maintenance
+          icon: 'build',
           color: COLORS.warning,
         },
       ]);
@@ -109,7 +109,7 @@ const AdminDashboardScreen = ({ navigation }) => {
       subtitle: language === 'es' 
         ? 'Crear y gestionar usuarios de apartamentos'
         : 'Create and manage apartment users',
-      icon: 'people', // ✅ This icon exists
+      icon: 'people',
       color: COLORS.primary,
       onPress: handleNavigateToUsers,
     },
@@ -119,7 +119,7 @@ const AdminDashboardScreen = ({ navigation }) => {
       subtitle: language === 'es' 
         ? 'Revisar y aprobar reservas'
         : 'Review and approve bookings',
-      icon: 'event', // ✅ This icon exists
+      icon: 'event',
       color: COLORS.success,
       onPress: handleNavigateToReservations,
     },
@@ -129,7 +129,7 @@ const AdminDashboardScreen = ({ navigation }) => {
       subtitle: language === 'es' 
         ? 'Configurar y mantener amenidades'
         : 'Configure and maintain amenities',
-      icon: 'apartment', // 🚨 FIX: Changed from 'place' to 'apartment'
+      icon: 'apartment',
       color: COLORS.warning,
       onPress: handleNavigateToAmenities,
     },
@@ -152,23 +152,21 @@ const AdminDashboardScreen = ({ navigation }) => {
       {/* Welcome Card */}
       <Card style={styles.welcomeCard}>
         <View style={styles.welcomeHeader}>
-          {/* 🚨 FIX: Changed icon name */}
           <Icon name="admin-panel-settings" size={32} color={COLORS.primary} />
           <View style={styles.welcomeText}>
             <Text style={styles.welcomeTitle}>
               {getGreeting()}, Admin
             </Text>
             <Text style={styles.welcomeSubtitle}>
-              {user?.username || 'manageBuilding'}
+              {user?.username || 'apartment000'}
             </Text>
           </View>
         </View>
       </Card>
 
-      {/* Stats Overview */}
+      {/* Stats Overview - FIXED: 2x2 Grid Layout with Proper Translations */}
       <View style={styles.statsContainer}>
         <View style={styles.statCard}>
-          {/* 🚨 FIX: Use correct icon names */}
           <Icon name="people" size={24} color={COLORS.primary} />
           <Text style={styles.statValue}>{stats.totalUsers}</Text>
           <Text style={styles.statLabel}>
@@ -177,11 +175,10 @@ const AdminDashboardScreen = ({ navigation }) => {
         </View>
 
         <View style={styles.statCard}>
-          {/* 🚨 FIX: Use 'pending' instead of 'schedule' */}
           <Icon name="pending" size={24} color={COLORS.warning} />
           <Text style={styles.statValue}>{stats.pendingReservations}</Text>
           <Text style={styles.statLabel}>
-            {language === 'es' ? 'pendingApprovals' : 'pendingApprovals'}
+            {language === 'es' ? 'Aprobaciones Pendientes' : 'Pending Approvals'}
           </Text>
         </View>
 
@@ -189,16 +186,15 @@ const AdminDashboardScreen = ({ navigation }) => {
           <Icon name="event" size={24} color={COLORS.success} />
           <Text style={styles.statValue}>{stats.activeReservations}</Text>
           <Text style={styles.statLabel}>
-            {language === 'es' ? 'activeBookings' : 'activeBookings'}
+            {language === 'es' ? 'Reservas Activas' : 'Active Bookings'}
           </Text>
         </View>
 
         <View style={styles.statCard}>
-          {/* 🚨 FIX: Use 'apartment' instead of 'place' */}
           <Icon name="apartment" size={24} color={COLORS.info} />
           <Text style={styles.statValue}>{stats.availableAmenities}</Text>
           <Text style={styles.statLabel}>
-            {language === 'es' ? 'availableAmenities' : 'availableAmenities'}
+            {language === 'es' ? 'Amenidades Disponibles' : 'Available Amenities'}
           </Text>
         </View>
       </View>
@@ -208,7 +204,6 @@ const AdminDashboardScreen = ({ navigation }) => {
         <TouchableOpacity onPress={handleViewPending}>
           <Card style={styles.alertCard}>
             <View style={styles.alertContent}>
-              {/* 🚨 FIX: Use 'notification-important' instead of 'notification_important' */}
               <Icon name="notification-important" size={24} color={COLORS.warning} />
               <View style={styles.alertText}>
                 <Text style={styles.alertTitle}>
@@ -221,7 +216,6 @@ const AdminDashboardScreen = ({ navigation }) => {
                   {language === 'es' ? 'Toque para revisar solicitudes pendientes' : 'Tap to review pending requests'}
                 </Text>
               </View>
-              {/* 🚨 FIX: Use 'chevron-right' */}
               <Icon name="chevron-right" size={20} color={COLORS.text.secondary} />
             </View>
           </Card>
@@ -328,15 +322,16 @@ const styles = StyleSheet.create({
     color: COLORS.text.secondary,
     marginTop: SPACING.xs / 2,
   },
+  // FIXED: 2x2 Grid Layout for Stats
   statsContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     paddingHorizontal: SPACING.md,
+    justifyContent: 'space-between',
   },
   statCard: {
-    width: '48%',
+    width: '48%', // FIXED: Changed from flex: 1 to fixed width for 2x2 grid
     alignItems: 'center',
-    marginHorizontal: '1%',
     marginBottom: SPACING.sm,
     padding: SPACING.md,
     backgroundColor: COLORS.surface,

@@ -1,11 +1,11 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-// 🔥 ENHANCED: Complete Localization system for Spanish/English with comprehensive translations
+// Enhanced Localization system for Spanish/English with comprehensive translations
 export class Localization {
   static LANGUAGE_KEY = 'app_language';
   static currentLanguage = 'en'; // Default to English
 
-  // 🔥 ENHANCED: Data translation mappings (English to Spanish)
+  // Data translation mappings (English to Spanish)
   static dataTranslations = {
     // Amenity names (stored in English, displayed in Spanish)
     amenities: {
@@ -91,9 +91,10 @@ export class Localization {
       'person': 'persona',
       'guests': 'huéspedes',
       'guest': 'huésped',
+      'visitor': 'visitante',
     },
 
-    // 🔥 NEW: Server validation error translations
+    // Server validation error translations
     validationErrors: {
       'Name is required': 'El nombre es requerido',
       'Capacity must be between 1 and 100': 'La capacidad debe estar entre 1 y 100',
@@ -112,7 +113,7 @@ export class Localization {
     }
   };
 
-  // 🔥 ENHANCED: Complete UI Translation strings
+  // Complete UI Translation strings
   static translations = {
     en: {
       // Navigation & General
@@ -152,6 +153,13 @@ export class Localization {
       myBookings: 'My Bookings',
       noUpcomingReservations: 'No upcoming reservations',
       bookAmenityToSee: 'Book an amenity to see your reservations here',
+
+      // FIXED: Added missing date/time/submitted translations
+      date: 'date',
+      time: 'time',
+      submitted: 'submitted',
+      submittedOn: 'submitted',
+      submittedAgo: 'submitted ago',
       
       // Booking Process
       selectDate: 'Select Date',
@@ -294,6 +302,13 @@ export class Localization {
       myBookings: 'Mis Reservas',
       noUpcomingReservations: 'No hay próximas reservas',
       bookAmenityToSee: 'Reserva una amenidad para ver tus reservas aquí',
+
+      // FIXED: Added missing Spanish translations for date/time/submitted
+      date: 'fecha',
+      time: 'hora',
+      submitted: 'enviado',
+      submittedOn: 'enviado',
+      submittedAgo: 'enviado hace',
       
       // Booking Process
       selectDate: 'Seleccionar Fecha',
@@ -329,7 +344,7 @@ export class Localization {
       autoApproved: 'Auto Aprobado',
       needsApproval: 'Necesita Aprobación',
       approve: 'Aprobar',
-      deny: 'Denegar',
+      deny: 'Rechazar',
       cancel: 'Cancelar',
       edit: 'Editar',
       view: 'Ver',
@@ -367,7 +382,7 @@ export class Localization {
       contactSupport: 'Contactar Soporte',
       technicalSupport: 'Para soporte técnico o cambios de contraseña, contacta al administrador del edificio',
       signOut: 'Cerrar Sesión',
-      confirmSignOut: '¿Está seguro de que desea cerrar sesión?',
+      confirmSignOut: '¿Estás seguro de que quieres cerrar sesión?',
       
       // Admin Screens
       userManagement: 'Gestión de Usuarios',
@@ -386,7 +401,7 @@ export class Localization {
       noReservationFound: 'No se encontró la reserva',
       noUsersFound: 'No se encontraron usuarios',
       noAmenitiesFound: 'No se encontraron amenidades',
-      networkError: 'Error de red. Por favor verifica tu conexión.',
+      networkError: 'Error de red. Por favor, verifica tu conexión.',
       unexpectedError: 'Ocurrió un error inesperado',
       
       // Misc
@@ -400,35 +415,44 @@ export class Localization {
     }
   };
 
-  // Get current language
-  static async getCurrentLanguage() {
+  // Initialize with stored language preference
+  static async initialize() {
     try {
-      const language = await AsyncStorage.getItem(this.LANGUAGE_KEY);
-      this.currentLanguage = language || 'en';
-      return this.currentLanguage;
+      const storedLanguage = await AsyncStorage.getItem(this.LANGUAGE_KEY);
+      if (storedLanguage && ['en', 'es'].includes(storedLanguage)) {
+        this.currentLanguage = storedLanguage;
+      }
     } catch (error) {
-      console.error('Error getting language:', error);
-      return 'en';
+      console.error('Error loading language preference:', error);
     }
   }
 
-  // Set language
+  // Set and persist language
   static async setLanguage(language) {
+    if (!['en', 'es'].includes(language)) {
+      throw new Error('Unsupported language');
+    }
+    
+    this.currentLanguage = language;
     try {
       await AsyncStorage.setItem(this.LANGUAGE_KEY, language);
-      this.currentLanguage = language;
     } catch (error) {
-      console.error('Error setting language:', error);
+      console.error('Error saving language preference:', error);
     }
   }
 
-  // Get UI translation
+  // Get current language
+  static getCurrentLanguage() {
+    return this.currentLanguage;
+  }
+
+  // Get translation for a key
   static t(key, language = null) {
     const lang = language || this.currentLanguage;
     return this.translations[lang]?.[key] || this.translations.en[key] || key;
   }
 
-  // 🔥 ENHANCED: Translate data stored in English to user's language
+  // Translate data stored in English to user's language
   static translateData(category, englishValue, language = null) {
     const lang = language || this.currentLanguage;
     
@@ -441,7 +465,7 @@ export class Localization {
     return this.dataTranslations[category][englishValue] || englishValue;
   }
 
-  // 🔥 NEW: Translate server validation errors
+  // Translate server validation errors
   static translateValidationError(englishError, language = null) {
     return this.translateData('validationErrors', englishError, language);
   }
@@ -461,7 +485,7 @@ export class Localization {
     return this.translateData('common', englishTerm, language);
   }
 
-  // 🔥 ENHANCED: Smart text translation - handles mixed content including validation errors
+  // Smart text translation - handles mixed content including validation errors
   static smartTranslate(text, language = null) {
     if (!text) return text;
     
