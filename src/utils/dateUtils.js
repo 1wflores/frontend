@@ -388,4 +388,57 @@ export class DateUtils {
       return `${startTime} - ${endTime}`;
     }
   }
+
+  // ADDED: Missing getDateString method for compatibility
+  static getDateString(dateInput) {
+    if (!dateInput) return '';
+    
+    const date = new Date(dateInput);
+    if (isNaN(date.getTime())) return '';
+    
+    return date.toISOString().split('T')[0]; // Returns YYYY-MM-DD format
+  }
+
+  // ADDED: Missing getCurrentDateString method for compatibility  
+  static getCurrentDateString() {
+    return this.getDateString(new Date());
+  }
+
+  // ADDED: Missing getTimeString method for compatibility
+  static getTimeString(dateInput) {
+    if (!dateInput) return '';
+    
+    const date = new Date(dateInput);
+    if (isNaN(date.getTime())) return '';
+    
+    return date.toISOString().split('T')[1].split('.')[0]; // Returns HH:mm:ss format
+  }
+
+  // ADDED: Missing createDateFromString method for compatibility
+  static createDateFromString(dateString, timeString = '00:00:00') {
+    if (!dateString) return null;
+    
+    const combinedString = `${dateString}T${timeString}`;
+    const date = new Date(combinedString);
+    
+    return isNaN(date.getTime()) ? null : date;
+  }
+
+  // ADDED: Missing formatDateForInput method for compatibility (for HTML date inputs)
+  static formatDateForInput(dateInput) {
+    return this.getDateString(dateInput);
+  }
+
+  // ADDED: Missing formatTimeForInput method for compatibility (for HTML time inputs)
+  static formatTimeForInput(dateInput) {
+    if (!dateInput) return '';
+    
+    const date = new Date(dateInput);
+    if (isNaN(date.getTime())) return '';
+    
+    const hours = date.getHours().toString().padStart(2, '0');
+    const minutes = date.getMinutes().toString().padStart(2, '0');
+    
+    return `${hours}:${minutes}`;
+  }
 }

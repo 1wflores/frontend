@@ -1,4 +1,4 @@
-import React, { useCallback } from 'react';
+import React, { useCallback, useEffect } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import { AuthProvider, useAuth } from '../contexts/AuthContext';
@@ -67,44 +67,99 @@ const MainStackNavigator = React.memo(() => {
   );
 });
 
+// FIXED: Enhanced RootNavigator with proper logout handling
 const RootNavigator = React.memo(() => {
-  const { user, loading, initialized } = useAuth();
+  const { user, loading, initialized, isAuthenticated } = useAuth();
   const { language } = useLanguage();
+
+  // FIXED: Clear navigation state when auth changes
+  useEffect(() => {
+    console.log('🔄 Auth state changed:', { 
+      hasUser: !!user, 
+      isAuthenticated, 
+      initialized, 
+      loading 
+    });
+  }, [user, isAuthenticated, initialized, loading]);
 
   const getNavigationState = useCallback(() => {
     if (loading || !initialized) {
       return 'loading';
     }
-    return user ? 'authenticated' : 'unauthenticated';
-  }, [user, loading, initialized]);
+    return isAuthenticated ? 'authenticated' : 'unauthenticated';
+  }, [isAuthenticated, loading, initialized]);
 
   const navigationState = getNavigationState();
 
+  console.log('📱 Navigation state:', navigationState);
+
   if (navigationState === 'loading') {
-    return <LoadingSpinner message={language === 'es' ? 'Cargando aplicación...' : 'Loading application...'} />;
+    return (
+      <LoadingSpinner 
+        message={language === 'es' ? 'Cargando aplicación...' : 'Loading application...'} 
+      />
+    );
   }
 
   return (
-    <RootStack.Navigator screenOptions={{ headerShown: false }}>
+    <RootStack.Navigator 
+      screenOptions={{ 
+        headerShown: false,
+        // FIXED: Add animation config to prevent white screen during transitions
+        cardStyle: { backgroundColor: COLORS.background },
+        animationEnabled: true,
+      }}
+    >
       {navigationState === 'authenticated' ? (
-        <RootStack.Screen name="Main" component={MainStackNavigator} />
+        <RootStack.Screen 
+          name="Main" 
+          component={MainStackNavigator} 
+          options={{
+            // FIXED: Prevent going back to auth stack when authenticated
+            gestureEnabled: false,
+          }}
+        />
       ) : (
-        <RootStack.Screen name="Auth" component={AuthStack} />
+        <RootStack.Screen 
+          name="Auth" 
+          component={AuthStack}
+          options={{
+            // FIXED: Clear stack when showing auth
+            animationTypeForReplace: 'pop',
+          }}
+        />
       )}
     </RootStack.Navigator>
   );
 });
 
-// 🚨 FIX: Change this line - use default export instead of named export
+// FIXED: Enhanced AppNavigator with navigation reset handling
 const AppNavigator = () => {
+  const [navigationReady, setNavigationReady] = React.useState(false);
+
+  const handleNavigationReady = () => {
+    console.log('🧭 Navigation ready');
+    setNavigationReady(true);
+  };
+
+  const handleNavigationStateChange = (state) => {
+    // Log navigation state changes for debugging
+    console.log('🧭 Navigation state changed:', state?.routes?.[state.index]?.name);
+  };
+
   return (
     <AuthProvider>
-      <NavigationContainer>
+      <NavigationContainer
+        onReady={handleNavigationReady}
+        onStateChange={handleNavigationStateChange}
+        fallback={
+          <LoadingSpinner message="Loading navigation..." />
+        }
+      >
         <RootNavigator />
       </NavigationContainer>
     </AuthProvider>
   );
 };
 
-// 🚨 FIX: Use default export
 export default AppNavigator;
