@@ -13,7 +13,7 @@ import { useLanguage } from '../../contexts/LanguageContext';
 import { Localization } from '../../utils/localization';
 import { DateUtils } from '../../utils/dateUtils';
 import { ValidationUtils } from '../../utils/validationUtils';
-import { useAuth } from '../../contexts/AuthContext';
+import { useAuth } from '../../hooks/useAuth';
 import { reservationService } from '../../services/reservationService';
 import { COLORS, SPACING, FONT_SIZES } from '../../utils/constants';
 

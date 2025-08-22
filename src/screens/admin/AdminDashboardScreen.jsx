@@ -12,7 +12,7 @@ import { Card } from '../../components/common/Card';
 import { Button } from '../../components/common/Button';
 import { useLanguage } from '../../contexts/LanguageContext';
 import { Localization } from '../../utils/localization';
-import { useAuth } from '../../contexts/AuthContext';
+import { useAuth } from '../../hooks/useAuth';
 import { COLORS, SPACING, FONT_SIZES } from '../../utils/constants';
 
 const AdminDashboardScreen = ({ navigation }) => {

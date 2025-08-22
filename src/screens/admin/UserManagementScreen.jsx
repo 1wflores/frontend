@@ -16,7 +16,7 @@ import { LoadingSpinner } from '../../components/common/LoadingSpinner';
 import { UserManagementCard } from '../../components/admin/UserManagementCard';
 import { UserCreationModal } from '../../components/admin/UserCreationModal';
 import { useLanguage } from '../../contexts/LanguageContext';
-import { useAuth } from '../../contexts/AuthContext';
+import { useAuth } from '../../hooks/useAuth';
 import { apiClient } from '../../services/apiClient';
 import { ApiErrorTranslator } from '../../utils/apiErrorTranslator';
 import { COLORS, SPACING, FONT_SIZES } from '../../utils/constants';
