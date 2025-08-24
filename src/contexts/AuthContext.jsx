@@ -66,7 +66,7 @@ export const AuthProvider = ({ children }) => {
       
       const response = await apiClient.post('/api/auth/login', credentials);
       
-      // ✅ FIXED: Access the correct response structure
+      // Access the correct response structure
       const { token, user: userData } = response.data.data;
 
       if (!token || !userData) {
@@ -88,12 +88,14 @@ export const AuthProvider = ({ children }) => {
       console.log('✅ Login successful for:', userData.username);
       return userData;
     } catch (error) {
-      console.error('❌ Login error:', error);
+      console.error('❌ Login error:', error.message);
       
       // Clean up on login failure
       await clearAuthData();
       
-      throw error;
+      // Re-throw the error with the original message
+      // This will preserve the server's error message
+      throw new Error(error.message || 'Login failed');
     }
   };
 

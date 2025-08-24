@@ -133,15 +133,25 @@ class ApiClient {
           throw new Error('Network error occurred');
         }
 
-        // Handle 401 unauthorized errors
-        if (error.response?.status === 401 && !originalRequest._retry) {
-          originalRequest._retry = true;
+        // FIX: Handle 401 errors more specifically
+        if (error.response?.status === 401) {
+          // Check if this is a login request
+          const isLoginRequest = originalRequest.url && originalRequest.url.includes('/api/auth/login');
           
-          // Clear auth data and force re-login
-          this.setAuthToken(null);
-          await StorageService.clearAuthData();
-          
-          throw new Error('Session expired. Please login again.');
+          if (isLoginRequest) {
+            // For login failures, use the server's error message
+            const serverMessage = error.response?.data?.message || 'Invalid credentials';
+            throw new Error(serverMessage);
+          } else if (!originalRequest._retry) {
+            // For authenticated requests, handle token expiration
+            originalRequest._retry = true;
+            
+            // Clear auth data and force re-login
+            this.setAuthToken(null);
+            await StorageService.clearAuthData();
+            
+            throw new Error('Session expired. Please login again.');
+          }
         }
 
         // Handle 403 forbidden errors
@@ -158,6 +168,12 @@ class ApiClient {
         // Handle validation errors
         if (error.response?.status === 400) {
           const message = error.response?.data?.message || 'Bad request';
+          throw new Error(message);
+        }
+
+        // Handle rate limiting
+        if (error.response?.status === 429) {
+          const message = error.response?.data?.message || 'Too many requests. Please try again later.';
           throw new Error(message);
         }
 
