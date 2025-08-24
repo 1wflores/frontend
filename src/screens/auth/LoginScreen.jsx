@@ -10,7 +10,6 @@ import {
   TouchableOpacity,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
-// ✅ FIXED: Correct import path
 import { useAuth } from '../../hooks/useAuth';
 import { useLanguage } from '../../contexts/LanguageContext';
 import { Input } from '../../components/common/Input';
@@ -59,11 +58,6 @@ const LoginScreen = () => {
     } finally {
       setLoading(false);
     }
-  };
-
-  const handleQuickLogin = (user, pass) => {
-    setUsername(user);
-    setPassword(pass);
   };
 
   const toggleLanguage = async () => {
@@ -130,31 +124,6 @@ const LoginScreen = () => {
           />
         </View>
 
-        {/* Quick Login Section for Testing */}
-        {__DEV__ && (
-          <View style={styles.quickLogin}>
-            <Text style={styles.quickLoginTitle}>
-              {language === 'es' ? 'Acceso Rápido (Solo Desarrollo)' : 'Quick Login (Dev Only)'}
-            </Text>
-            <View style={styles.quickLoginButtons}>
-              <TouchableOpacity 
-                style={styles.quickButton}
-                onPress={() => handleQuickLogin('admin', 'Admin123!')}
-              >
-                <Text style={styles.quickButtonText}>Admin</Text>
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={styles.quickButton}
-                onPress={() => handleQuickLogin('apartment204', 'Resident123!')}
-              >
-                <Text style={styles.quickButtonText}>
-                  {language === 'es' ? 'Residente' : 'Resident'}
-                </Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        )}
-
         {/* Footer */}
         <View style={styles.footer}>
           <Text style={styles.footerText}>
@@ -220,37 +189,6 @@ const styles = StyleSheet.create({
   },
   loginButton: {
     marginTop: SPACING.lg,
-  },
-  quickLogin: {
-    marginTop: SPACING.lg,
-    padding: SPACING.md,
-    backgroundColor: COLORS.surface,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: COLORS.warning,
-  },
-  quickLoginTitle: {
-    fontSize: FONT_SIZES.sm,
-    fontWeight: '600',
-    color: COLORS.warning,
-    textAlign: 'center',
-    marginBottom: SPACING.md,
-  },
-  quickLoginButtons: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-  },
-  quickButton: {
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.sm,
-    backgroundColor: COLORS.warning,
-    borderRadius: 6,
-    minWidth: 80,
-  },
-  quickButtonText: {
-    color: COLORS.white,
-    fontWeight: '600',
-    textAlign: 'center',
   },
   footer: {
     alignItems: 'center',
