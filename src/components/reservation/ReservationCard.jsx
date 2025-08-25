@@ -1,193 +1,237 @@
-import React from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-} from 'react-native';
-import Icon from 'react-native-vector-icons/MaterialIcons';
-import { Button } from '../common/Button';
-import { Card } from '../common/Card';
-import { useLanguage } from '../../contexts/LanguageContext';
-import { Localization } from '../../utils/localization';
-import { DateUtils } from '../../utils/dateUtils';
-import { COLORS, SPACING, FONT_SIZES, STATUS_COLORS } from '../../utils/constants';
+// src/components/reservation/ReservationCard.jsx - ENHANCED WITH PROPER CANCELLATION
 
-export const ReservationCard = ({
-  reservation,
-  onViewDetails,
-  onCancel,
-  showActions = true,
+import React from 'react';
+import { View, Text, StyleSheet, Alert, TouchableOpacity } from 'react-native';
+import Icon from 'react-native-vector-icons/MaterialIcons';
+import { useLanguage } from '../../contexts/LanguageContext';
+import { useReservations } from '../../hooks/useReservations';
+import { DateUtils } from '../../utils/dateUtils';
+import { ValidationUtils } from '../../utils/validationUtils';
+import { COLORS, SPACING, FONT_SIZES } from '../../utils/constants';
+
+const ReservationCard = ({ 
+  reservation, 
+  onPress, 
+  showActions = true, 
+  isAdmin = false 
 }) => {
-  const { language, t } = useLanguage();
+  const { t, language } = useLanguage();
+  const { cancelReservation, loading } = useReservations();
+
+  // ✅ ENHANCED: Better cancellation logic with proper deletion confirmation
+  const handleCancelReservation = () => {
+    // Check if reservation can be cancelled
+    const cancellableStatuses = ['pending', 'approved', 'confirmed'];
+    if (!cancellableStatuses.includes(reservation.status)) {
+      Alert.alert(
+        t('error') || 'Error',
+        language === 'es' 
+          ? `No se puede cancelar una reserva con estado: ${reservation.status}`
+          : `Cannot cancel reservation with status: ${reservation.status}`
+      );
+      return;
+    }
+
+    // Enhanced confirmation dialog
+    Alert.alert(
+      language === 'es' ? 'Confirmar Cancelación' : 'Confirm Cancellation',
+      language === 'es' 
+        ? '¿Está seguro de que desea cancelar esta reserva? Esta acción eliminará permanentemente la reserva y liberará el horario para otros usuarios.'
+        : 'Are you sure you want to cancel this reservation? This action will permanently delete the reservation and free up the time slot for other users.',
+      [
+        { 
+          text: language === 'es' ? 'No' : 'No', 
+          style: 'cancel' 
+        },
+        {
+          text: language === 'es' ? 'Sí, Cancelar' : 'Yes, Cancel',
+          style: 'destructive',
+          onPress: performCancellation,
+        },
+      ]
+    );
+  };
+
+  const performCancellation = async () => {
+    try {
+      console.log(`🚫 Cancelling reservation ${reservation.id}`);
+      
+      const result = await cancelReservation(reservation.id);
+      
+      console.log('✅ Cancellation result:', result);
+
+      // ✅ ENHANCED: Success message with slot availability confirmation
+      Alert.alert(
+        t('success') || 'Success',
+        language === 'es'
+          ? 'Reserva cancelada exitosamente. El horario ya está disponible para otros usuarios.'
+          : 'Reservation cancelled successfully. The time slot is now available for other users.',
+        [{ text: 'OK' }]
+      );
+
+    } catch (error) {
+      console.error('❌ Cancellation error:', error);
+      
+      // ✅ ENHANCED: Better error handling with specific messages
+      let errorMessage = language === 'es' 
+        ? 'Error al cancelar la reserva' 
+        : 'Failed to cancel reservation';
+
+      if (error.message.includes('Access denied')) {
+        errorMessage = language === 'es'
+          ? 'Solo puedes cancelar tus propias reservas'
+          : 'You can only cancel your own reservations';
+      } else if (error.message.includes('Cannot cancel')) {
+        errorMessage = language === 'es'
+          ? 'No se puede cancelar esta reserva'
+          : 'This reservation cannot be cancelled';
+      } else if (error.message.includes('not found')) {
+        errorMessage = language === 'es'
+          ? 'Reserva no encontrada'
+          : 'Reservation not found';
+      }
+
+      Alert.alert(
+        t('error') || 'Error',
+        errorMessage,
+        [{ text: 'OK' }]
+      );
+    }
+  };
 
   const getStatusColor = (status) => {
-    return STATUS_COLORS[status] || COLORS.text.secondary;
-  };
-
-  const getStatusIcon = (status) => {
     switch (status) {
-      case 'approved':
-        return 'check-circle';
       case 'pending':
-        return 'schedule';
+        return COLORS.warning;
+      case 'approved':
+        return COLORS.success;
       case 'denied':
-        return 'cancel';
+        return COLORS.error;
       case 'cancelled':
-        return 'block';
-      case 'completed':
-        return 'done-all';
+        return COLORS.text.secondary;
       default:
-        return 'help';
+        return COLORS.text.secondary;
     }
   };
 
-  // ✅ FIXED: Using proper translation function
-  const getStatusMessage = (status) => {
-    const statusMap = {
-      pending: 'waitingForApproval',
-      approved: 'confirmed',
-      denied: 'notApproved',
-      cancelled: 'cancelled',
-      completed: 'completed',
-    };
-    
-    return t(statusMap[status]) || Localization.translateStatus(status, language);
-  };
-
-  const canCancel = ['pending', 'approved'].includes(reservation.status) && 
-    DateUtils.isFuture(reservation.startTime);
-
-  // ✅ FIXED: Translate amenity name properly
-  const getTranslatedAmenityName = () => {
-    return Localization.translateAmenity(reservation.amenityName || reservation.amenity?.name, language);
-  };
-
-  // ✅ FIXED: Format visitor count with proper translation
-  const getVisitorText = () => {
-    const count = reservation.specialRequests?.visitorCount || 0;
-    if (count === 0) return null;
-    
-    const visitorWord = count === 1 ? t('visitor') : t('visitors');
-    return `${count} ${visitorWord}`;
-  };
-
-  // ✅ FIXED: Format special requirements with translations
-  const getSpecialRequirementsText = () => {
-    const requirements = [];
-    
-    if (reservation.specialRequirements?.grillUsage) {
-      requirements.push(t('grillUsage'));
+  const getStatusText = (status) => {
+    switch (status) {
+      case 'pending':
+        return language === 'es' ? 'Pendiente' : 'Pending';
+      case 'approved':
+        return language === 'es' ? 'Aprobada' : 'Approved';
+      case 'denied':
+        return language === 'es' ? 'Denegada' : 'Denied';
+      case 'cancelled':
+        return language === 'es' ? 'Cancelada' : 'Cancelled';
+      default:
+        return status;
     }
+  };
+
+  const canCancel = () => {
+    const cancellableStatuses = ['pending', 'approved', 'confirmed'];
+    const isPastReservation = DateUtils.isPast(reservation.startTime);
     
-    if (reservation.specialRequirements?.requiresDeposit) {
-      requirements.push(t('depositRequired'));
+    // Admins can cancel any cancellable reservation, users can only cancel future ones
+    if (isAdmin) {
+      return cancellableStatuses.includes(reservation.status);
+    } else {
+      return cancellableStatuses.includes(reservation.status) && !isPastReservation;
     }
-    
-    return requirements.length > 0 ? requirements.join(' • ') : null;
   };
 
   return (
-    <Card style={styles.container}>
-      <View style={styles.header}>
-        <View style={styles.statusContainer}>
-          <Icon 
-            name={getStatusIcon(reservation.status)} 
-            size={20} 
-            color={getStatusColor(reservation.status)} 
-          />
-          <Text style={[styles.status, { color: getStatusColor(reservation.status) }]}>
-            {getStatusMessage(reservation.status)}
+    <TouchableOpacity 
+      style={styles.card} 
+      onPress={onPress}
+      activeOpacity={0.7}
+    >
+      {/* Status Badge */}
+      <View style={[styles.statusBadge, { backgroundColor: getStatusColor(reservation.status) }]}>
+        <Text style={styles.statusText}>{getStatusText(reservation.status)}</Text>
+      </View>
+
+      {/* Main Content */}
+      <View style={styles.content}>
+        <View style={styles.header}>
+          <Text style={styles.amenityName}>
+            {reservation.amenityName || reservation.amenity?.name || 'Unknown Amenity'}
+          </Text>
+          <Text style={styles.apartmentNumber}>
+            {ValidationUtils.getApartmentFromReservation(reservation)}
           </Text>
         </View>
-        
-        {reservation.specialRequirements?.requiresDeposit && (
-          <View style={styles.depositBadge}>
-            {/* ✅ FIXED: Using proper translation */}
-            <Text style={styles.depositText}>
-              {t('depositRequired').toUpperCase()}
+
+        <View style={styles.timeInfo}>
+          <Icon name="access-time" size={16} color={COLORS.text.secondary} />
+          <Text style={styles.timeText}>
+            {DateUtils.formatDateTime(reservation.startTime, language)} - 
+            {DateUtils.formatTime(reservation.endTime, language)}
+          </Text>
+        </View>
+
+        {reservation.rejectionReason && (
+          <View style={styles.rejectionReason}>
+            <Icon name="info" size={16} color={COLORS.error} />
+            <Text style={styles.rejectionText}>
+              {reservation.rejectionReason}
             </Text>
           </View>
         )}
       </View>
 
-      <View style={styles.content}>
-        {/* ✅ FIXED: Translate amenity name */}
-        <Text style={styles.amenityName}>
-          {getTranslatedAmenityName()}
-        </Text>
-        
-        <View style={styles.dateTimeContainer}>
-          <View style={styles.dateTimeRow}>
-            <Icon name="event" size={16} color={COLORS.text.secondary} />
-            <Text style={styles.dateTime}>
-              {DateUtils.formatDate(reservation.date || reservation.startTime, language)}
-            </Text>
-          </View>
-          
-          <View style={styles.dateTimeRow}>
-            <Icon name="schedule" size={16} color={COLORS.text.secondary} />
-            <Text style={styles.dateTime}>
-              {DateUtils.formatTime(reservation.startTime)} - {DateUtils.formatTime(reservation.endTime)}
-            </Text>
-          </View>
-        </View>
-
-        {/* ✅ FIXED: Visitor count with proper translation */}
-        {getVisitorText() && (
-          <View style={styles.detailRow}>
-            <Icon name="people" size={16} color={COLORS.text.secondary} />
-            <Text style={styles.detailText}>{getVisitorText()}</Text>
-          </View>
-        )}
-
-        {/* ✅ FIXED: Special requirements with translations */}
-        {getSpecialRequirementsText() && (
-          <View style={styles.detailRow}>
-            <Icon name="info" size={16} color={COLORS.text.secondary} />
-            <Text style={styles.detailText}>{getSpecialRequirementsText()}</Text>
-          </View>
-        )}
-
-        {/* Notes */}
-        {reservation.specialRequests?.notes && (
-          <View style={styles.notesContainer}>
-            <Text style={styles.notesLabel}>{t('specialNotes')}:</Text>
-            <Text style={styles.notesText}>{reservation.specialRequests.notes}</Text>
-          </View>
-        )}
-      </View>
-
-      {showActions && (
-        <View style={styles.actions}>
-          {onViewDetails && (
-            <Button
-              title={t('viewDetails')}
-              variant="outline"
-              size="small"
-              onPress={() => onViewDetails(reservation)}
-              style={styles.actionButton}
-            />
-          )}
-          
-          {canCancel && onCancel && (
-            <Button
-              title={t('cancel')}
-              variant="outline"
-              size="small"
-              onPress={() => onCancel(reservation)}
-              style={[styles.actionButton, styles.cancelButton]}
-            />
-          )}
-        </View>
+      {/* Actions */}
+      {showActions && canCancel() && (
+        <TouchableOpacity 
+          style={styles.cancelButton}
+          onPress={handleCancelReservation}
+          disabled={loading}
+        >
+          <Icon 
+            name="cancel" 
+            size={20} 
+            color={COLORS.error} 
+          />
+          <Text style={styles.cancelText}>
+            {language === 'es' ? 'Cancelar' : 'Cancel'}
+          </Text>
+        </TouchableOpacity>
       )}
-    </Card>
+    </TouchableOpacity>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
-    marginBottom: SPACING.md,
+  card: {
+    backgroundColor: COLORS.background.card,
+    borderRadius: 12,
+    padding: SPACING.md,
+    marginVertical: SPACING.sm,
+    marginHorizontal: SPACING.md,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    borderWidth: 1,
+    borderColor: COLORS.border.light,
+  },
+  statusBadge: {
+    position: 'absolute',
+    top: SPACING.sm,
+    right: SPACING.sm,
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: SPACING.xs,
+    borderRadius: 12,
+  },
+  statusText: {
+    color: COLORS.text.inverse,
+    fontSize: FONT_SIZES.sm,
+    fontWeight: '600',
+  },
+  content: {
+    paddingRight: SPACING.xl * 2, // Space for status badge
   },
   header: {
     flexDirection: 'row',
@@ -195,83 +239,59 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: SPACING.sm,
   },
-  statusContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  status: {
-    fontSize: FONT_SIZES.sm,
-    fontWeight: '600',
-    marginLeft: SPACING.xs,
-  },
-  depositBadge: {
-    backgroundColor: COLORS.warning,
-    paddingHorizontal: SPACING.xs,
-    paddingVertical: SPACING.xs / 2,
-    borderRadius: 4,
-  },
-  depositText: {
-    fontSize: FONT_SIZES.xs,
-    fontWeight: 'bold',
-    color: COLORS.white,
-  },
-  content: {
-    marginBottom: SPACING.sm,
-  },
   amenityName: {
     fontSize: FONT_SIZES.lg,
-    fontWeight: 'bold',
-    color: COLORS.text.primary,
-    marginBottom: SPACING.xs,
-  },
-  dateTimeContainer: {
-    marginBottom: SPACING.sm,
-  },
-  dateTimeRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: SPACING.xs / 2,
-  },
-  dateTime: {
-    fontSize: FONT_SIZES.sm,
-    color: COLORS.text.secondary,
-    marginLeft: SPACING.xs,
-  },
-  detailRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: SPACING.xs,
-  },
-  detailText: {
-    fontSize: FONT_SIZES.sm,
-    color: COLORS.text.secondary,
-    marginLeft: SPACING.xs,
-  },
-  notesContainer: {
-    marginTop: SPACING.sm,
-    padding: SPACING.sm,
-    backgroundColor: COLORS.surface,
-    borderRadius: 6,
-  },
-  notesLabel: {
-    fontSize: FONT_SIZES.sm,
     fontWeight: '600',
     color: COLORS.text.primary,
-    marginBottom: SPACING.xs / 2,
+    flex: 1,
   },
-  notesText: {
+  apartmentNumber: {
     fontSize: FONT_SIZES.sm,
     color: COLORS.text.secondary,
-    lineHeight: 18,
+    fontWeight: '500',
   },
-  actions: {
+  timeInfo: {
     flexDirection: 'row',
-    gap: SPACING.sm,
+    alignItems: 'center',
+    marginBottom: SPACING.sm,
   },
-  actionButton: {
+  timeText: {
+    fontSize: FONT_SIZES.md,
+    color: COLORS.text.secondary,
+    marginLeft: SPACING.sm,
+  },
+  rejectionReason: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: COLORS.background.error,
+    padding: SPACING.sm,
+    borderRadius: 8,
+    marginTop: SPACING.sm,
+  },
+  rejectionText: {
+    fontSize: FONT_SIZES.sm,
+    color: COLORS.error,
+    marginLeft: SPACING.sm,
     flex: 1,
   },
   cancelButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: SPACING.md,
+    paddingVertical: SPACING.sm,
+    paddingHorizontal: SPACING.md,
+    backgroundColor: COLORS.background.error,
+    borderRadius: 8,
+    borderWidth: 1,
     borderColor: COLORS.error,
   },
+  cancelText: {
+    color: COLORS.error,
+    fontSize: FONT_SIZES.md,
+    fontWeight: '600',
+    marginLeft: SPACING.sm,
+  },
 });
+
+export { ReservationCard };
