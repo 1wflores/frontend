@@ -1,4 +1,4 @@
-// src/services/reservationService.js - FIXED VERSION
+// src/services/reservationService.js - UPDATED VERSION
 
 import { apiClient } from './apiClient';
 import { ValidationUtils } from '../utils/validationUtils';
@@ -26,7 +26,7 @@ export class ReservationService {
     }
   }
 
-  // ✅ ENHANCED: Better error handling for getUserReservations
+  // ✅ UPDATED: Simplified getUserReservations - backend now handles filtering
   async getUserReservations(filters = {}) {
     try {
       console.log('📥 ReservationService: Getting user reservations with filters:', filters);
@@ -50,6 +50,7 @@ export class ReservationService {
       }
       
       console.log(`📊 ReservationService: Processed ${reservations.length} reservations`);
+      console.log(`ℹ️  Note: Backend now filters reservations based on user role - residents only get upcoming reservations`);
       
       // ✅ IMPORTANT: Return consistent structure
       return {
@@ -71,48 +72,26 @@ export class ReservationService {
         throw new Error('Authentication required. Please log in again.');
       } else if (error.response?.status === 403) {
         throw new Error('Access denied. Please check your permissions.');
-      } else if (error.response?.status === 500) {
-        throw new Error('Server error occurred. Please try again later.');
-      } else if (error.code === 'NETWORK_ERROR' || error.message.includes('Network Error')) {
-        throw new Error('Network error. Please check your connection.');
-      } else {
-        throw new Error(error.response?.data?.message || error.message || 'Failed to fetch reservations');
-      }
-    }
-  }
-
-  async getReservationById(reservationId) {
-    try {
-      console.log('📥 ReservationService: Getting reservation by ID:', reservationId);
-      
-      const response = await apiClient.get(`/api/reservations/${reservationId}`);
-      
-      console.log('📊 ReservationService: Reservation details:', response.data);
-      
-      return response.data.data.reservation;
-    } catch (error) {
-      console.error('❌ ReservationService: getReservationById error:', error);
-      
-      if (error.response?.status === 404) {
-        throw new Error('Reservation not found');
-      } else if (error.response?.status === 403) {
-        throw new Error('Access denied to this reservation');
       }
       throw error;
     }
   }
 
-  async getAvailableSlots(amenityId, date) {
+  async getAvailableSlots(amenityId, date, duration = 60) {
     try {
-      console.log('📥 ReservationService: Getting available slots:', { amenityId, date });
+      console.log('📥 ReservationService: Getting available slots:', { amenityId, date, duration });
       
       const response = await apiClient.get('/api/reservations/available-slots', {
-        params: { amenityId, date }
+        params: { 
+          amenityId, 
+          date, 
+          duration 
+        }
       });
       
-      console.log('📊 ReservationService: Available slots:', response.data);
+      console.log('📊 ReservationService: Available slots response:', response.data);
       
-      return response.data.data.slots || [];
+      return response.data.data.slots || response.data.slots || [];
     } catch (error) {
       console.error('❌ ReservationService: getAvailableSlots error:', error);
       throw error;
@@ -127,7 +106,7 @@ export class ReservationService {
       
       console.log('✅ ReservationService: Reservation cancelled:', response.data);
       
-      return response.data.data.reservation;
+      return response.data.data || response.data;
     } catch (error) {
       console.error('❌ ReservationService: cancelReservation error:', error);
       
@@ -142,7 +121,7 @@ export class ReservationService {
 
   // 🔥 ADMIN METHODS
 
-  // ✅ ENHANCED: Better error handling for getAllReservations
+  // ✅ UPDATED: getAllReservations for admin use
   async getAllReservations(filters = {}) {
     try {
       console.log('📥 ReservationService: Getting all reservations with filters:', filters);
@@ -186,14 +165,13 @@ export class ReservationService {
     }
   }
 
-  // ✅ FIXED: Use the correct endpoint that exists in your backend
+  // ✅ UPDATED: Admin approval methods
   async approveReservation(reservationId) {
     try {
       console.log('📥 ReservationService: Approving reservation:', reservationId);
       
       const response = await apiClient.patch(`/api/reservations/${reservationId}/status`, {
         status: 'approved'
-        // Don't send denialReason for approvals to avoid validation issues
       });
       
       console.log('✅ ReservationService: Reservation approved:', response.data);
@@ -205,7 +183,6 @@ export class ReservationService {
     }
   }
 
-  // ✅ FIXED: Use the correct endpoint that exists in your backend
   async denyReservation(reservationId, denialReason) {
     try {
       console.log('📥 ReservationService: Denying reservation:', reservationId, 'Reason:', denialReason);
@@ -287,6 +264,60 @@ export class ReservationService {
         console.log('ℹ️ Search endpoint not available, using getAllReservations');
         return await this.getAllReservations();
       }
+      throw error;
+    }
+  }
+
+  // ✅ NEW: Get reservation by ID
+  async getReservationById(reservationId) {
+    try {
+      console.log('📥 ReservationService: Getting reservation by ID:', reservationId);
+      
+      const response = await apiClient.get(`/api/reservations/${reservationId}`);
+      
+      console.log('📊 ReservationService: Reservation details:', response.data);
+      
+      return response.data.data.reservation;
+    } catch (error) {
+      console.error('❌ ReservationService: getReservationById error:', error);
+      throw error;
+    }
+  }
+
+  // ✅ NEW: Get reservations by amenity (admin only)
+  async getReservationsByAmenity(amenityId, startDate, endDate) {
+    try {
+      console.log('📥 ReservationService: Getting reservations by amenity:', { amenityId, startDate, endDate });
+      
+      const response = await apiClient.get(`/api/reservations/amenity/${amenityId}`, {
+        params: { startDate, endDate }
+      });
+      
+      console.log('📊 ReservationService: Amenity reservations:', response.data);
+      
+      const reservations = response.data.data?.reservations || response.data.reservations || [];
+      return {
+        reservations: reservations,
+        total: reservations.length
+      };
+    } catch (error) {
+      console.error('❌ ReservationService: getReservationsByAmenity error:', error);
+      throw error;
+    }
+  }
+
+  // ✅ NEW: Health check
+  async getReservationHealth() {
+    try {
+      console.log('📥 ReservationService: Getting reservation system health');
+      
+      const response = await apiClient.get('/api/reservations/health');
+      
+      console.log('📊 ReservationService: Health status:', response.data);
+      
+      return response.data.data;
+    } catch (error) {
+      console.error('❌ ReservationService: getReservationHealth error:', error);
       throw error;
     }
   }

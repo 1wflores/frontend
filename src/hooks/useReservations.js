@@ -1,52 +1,42 @@
-// src/hooks/useReservations.js - FIXED VERSION
+// src/hooks/useReservations.js - UPDATED VERSION
 
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import { reservationService } from '../services/reservationService';
-import { useAuth } from './useAuth';
-import debounce from 'lodash.debounce';
+
+const CACHE_DURATION = 2 * 60 * 1000; // 2 minutes
 
 export const useReservations = () => {
   const [reservations, setReservations] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const { user } = useAuth();
   
-  // Cache management
+  // Cache and abort controller refs
   const cache = useRef(new Map());
-  const cacheTimeout = useRef(5 * 60 * 1000); // 5 minutes
   const abortController = useRef(null);
 
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      if (abortController.current) {
-        abortController.current.abort();
-      }
-    };
+  const getCacheKey = useCallback((filters = {}) => {
+    return JSON.stringify(filters);
   }, []);
 
-  const getCacheKey = useCallback((type = 'user') => {
-    return `${type}-${user?.id}-${new Date().toDateString()}`;
-  }, [user]);
-
-  // ✅ FIXED: Enhanced fetchUserReservations with better error handling
   const fetchUserReservations = useCallback(async (forceRefresh = false, filters = {}) => {
-    const cacheKey = getCacheKey('user');
+    const cacheKey = getCacheKey(filters);
     
-    // Check cache first
-    if (!forceRefresh && cache.current.has(cacheKey)) {
+    // Check cache first (unless force refresh)
+    if (!forceRefresh) {
       const cached = cache.current.get(cacheKey);
-      if (Date.now() - cached.timestamp < cacheTimeout.current) {
+      if (cached && (Date.now() - cached.timestamp) < CACHE_DURATION) {
+        console.log('📋 Using cached user reservations');
         setReservations(cached.data);
         return cached.data;
       }
     }
 
-    // Cancel previous request
+    // Cancel previous request if it exists
     if (abortController.current) {
       abortController.current.abort();
     }
-    
+
+    // Create new abort controller
     abortController.current = new AbortController();
 
     try {
@@ -55,29 +45,23 @@ export const useReservations = () => {
       
       console.log('📥 Fetching user reservations with filters:', filters);
       
-      const response = await reservationService.getUserReservations({
-        ...filters,
-        signal: abortController.current.signal
-      });
+      const response = await reservationService.getUserReservations(filters);
       
-      console.log('📊 User reservations API response:', response);
-      
-      // ✅ ENHANCED: Handle different response structures gracefully
+      // Handle different response structures
       let userReservations = [];
-      if (response) {
-        if (Array.isArray(response)) {
-          userReservations = response;
-        } else if (response.reservations && Array.isArray(response.reservations)) {
-          userReservations = response.reservations;
-        } else if (response.data && Array.isArray(response.data)) {
-          userReservations = response.data;
-        }
+      if (response && response.reservations && Array.isArray(response.reservations)) {
+        userReservations = response.reservations;
+      } else if (Array.isArray(response)) {
+        userReservations = response;
+      } else if (response && response.data && Array.isArray(response.data)) {
+        userReservations = response.data;
       }
       
       // ✅ IMPORTANT: Always ensure we have an array
       userReservations = userReservations || [];
       
       console.log(`✅ Loaded ${userReservations.length} user reservations successfully`);
+      console.log(`ℹ️  Backend filtering: Residents only receive upcoming reservations, admins receive all data`);
       
       // Update cache
       cache.current.set(cacheKey, {
@@ -154,11 +138,96 @@ export const useReservations = () => {
       
       console.log('✅ Reservation cancelled successfully');
       
+      // Optimistic update - remove from current list
+      setReservations(prev => prev.filter(r => r.id !== reservationId));
+      
+      // Invalidate cache
+      cache.current.clear();
+      
+      // Refresh to get updated data from backend
+      setTimeout(() => {
+        fetchUserReservations(true);
+      }, 500);
+      
+    } catch (err) {
+      console.error('❌ Error cancelling reservation:', err);
+      setError(err.message || 'Failed to cancel reservation');
+      
+      // Revert optimistic update by refreshing
+      await fetchUserReservations(true);
+      
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  }, [fetchUserReservations]);
+
+  // ✅ NEW: Admin-specific methods
+  const fetchAllReservations = useCallback(async (forceRefresh = false, filters = {}) => {
+    const cacheKey = `all_${getCacheKey(filters)}`;
+    
+    // Check cache first (unless force refresh)
+    if (!forceRefresh) {
+      const cached = cache.current.get(cacheKey);
+      if (cached && (Date.now() - cached.timestamp) < CACHE_DURATION) {
+        console.log('📋 Using cached all reservations');
+        setReservations(cached.data);
+        return cached.data;
+      }
+    }
+
+    try {
+      setLoading(true);
+      setError(null);
+      
+      console.log('📥 Fetching all reservations (admin) with filters:', filters);
+      
+      const response = await reservationService.getAllReservations(filters);
+      
+      let allReservations = [];
+      if (response && response.reservations && Array.isArray(response.reservations)) {
+        allReservations = response.reservations;
+      } else if (Array.isArray(response)) {
+        allReservations = response;
+      }
+      
+      allReservations = allReservations || [];
+      
+      console.log(`✅ Loaded ${allReservations.length} total reservations (admin view)`);
+      
+      // Update cache
+      cache.current.set(cacheKey, {
+        data: allReservations,
+        timestamp: Date.now()
+      });
+      
+      setReservations(allReservations);
+      return allReservations;
+    } catch (err) {
+      console.error('❌ Error fetching all reservations:', err);
+      setError(err.message || 'Failed to fetch reservations');
+      return [];
+    } finally {
+      setLoading(false);
+    }
+  }, [getCacheKey]);
+
+  const approveReservation = useCallback(async (reservationId) => {
+    try {
+      setLoading(true);
+      setError(null);
+      
+      console.log('✅ Approving reservation:', reservationId);
+      
+      const updatedReservation = await reservationService.approveReservation(reservationId);
+      
+      console.log('✅ Reservation approved successfully:', updatedReservation);
+      
       // Optimistic update
       setReservations(prev => 
         prev.map(r => 
           r.id === reservationId 
-            ? { ...r, status: 'cancelled' }
+            ? { ...r, status: 'approved', updatedAt: new Date().toISOString() }
             : r
         )
       );
@@ -166,84 +235,96 @@ export const useReservations = () => {
       // Invalidate cache
       cache.current.clear();
       
-      // Refresh in background
-      fetchUserReservations(true);
-      
-      return true;
+      return updatedReservation;
     } catch (err) {
-      console.error('❌ Error cancelling reservation:', err);
-      setError(err.message || 'Failed to cancel reservation');
-      // Revert optimistic update
-      await fetchUserReservations(true);
+      console.error('❌ Error approving reservation:', err);
+      setError(err.message || 'Failed to approve reservation');
       throw err;
     } finally {
       setLoading(false);
     }
-  }, [fetchUserReservations]);
+  }, []);
 
-  // ✅ ENHANCED: getAvailableSlots with better error handling
-  const getAvailableSlots = useCallback(async (amenityId, date) => {
+  const denyReservation = useCallback(async (reservationId, denialReason) => {
     try {
       setLoading(true);
       setError(null);
       
-      console.log('🔍 Getting available slots:', { amenityId, date });
+      console.log('❌ Denying reservation:', reservationId, 'Reason:', denialReason);
       
-      const slots = await reservationService.getAvailableSlots(amenityId, date);
+      const updatedReservation = await reservationService.denyReservation(reservationId, denialReason);
       
-      console.log('✅ Available slots loaded:', slots);
+      console.log('✅ Reservation denied successfully:', updatedReservation);
       
-      return slots || [];
+      // Optimistic update
+      setReservations(prev => 
+        prev.map(r => 
+          r.id === reservationId 
+            ? { ...r, status: 'denied', rejectionReason: denialReason, updatedAt: new Date().toISOString() }
+            : r
+        )
+      );
+      
+      // Invalidate cache
+      cache.current.clear();
+      
+      return updatedReservation;
     } catch (err) {
-      console.error('❌ Error fetching available slots:', err);
-      setError(err.message || 'Failed to fetch available slots');
+      console.error('❌ Error denying reservation:', err);
+      setError(err.message || 'Failed to deny reservation');
       throw err;
     } finally {
       setLoading(false);
     }
   }, []);
 
-  // Debounced search for admin panel
-  const searchReservations = useCallback(
-    debounce(async (query) => {
-      try {
-        setLoading(true);
-        console.log('🔍 Searching reservations:', query);
-        
-        const results = await reservationService.searchReservations(query);
-        const searchResults = results?.reservations || results || [];
-        
-        console.log('🔍 Search results:', searchResults);
-        
-        setReservations(searchResults);
-      } catch (err) {
-        console.error('❌ Error searching reservations:', err);
-        setError(err.message || 'Failed to search reservations');
-      } finally {
-        setLoading(false);
-      }
-    }, 300),
-    []
-  );
+  const getAvailableSlots = useCallback(async (amenityId, date, duration = 60) => {
+    try {
+      console.log('📅 Getting available slots:', { amenityId, date, duration });
+      
+      const slots = await reservationService.getAvailableSlots(amenityId, date, duration);
+      
+      console.log(`✅ Found ${slots.length} available slots`);
+      
+      return slots;
+    } catch (err) {
+      console.error('❌ Error getting available slots:', err);
+      throw err;
+    }
+  }, []);
 
+  // ✅ NEW: Clear cache utility
   const clearCache = useCallback(() => {
+    console.log('🗑️ Clearing reservations cache');
     cache.current.clear();
   }, []);
 
-  const clearError = useCallback(() => {
-    setError(null);
-  }, []);
+  // ✅ NEW: Get cached data
+  const getCachedReservations = useCallback((filters = {}) => {
+    const cacheKey = getCacheKey(filters);
+    const cached = cache.current.get(cacheKey);
+    return cached?.data || null;
+  }, [getCacheKey]);
 
   return {
+    // Data
     reservations,
     loading,
     error,
+    
+    // User methods
     fetchUserReservations,
     createReservation,
     cancelReservation,
     getAvailableSlots,
-    searchReservations,
+    
+    // Admin methods
+    fetchAllReservations,
+    approveReservation,
+    denyReservation,
+    
+    // Utilities
     clearCache,
-    clearError, // ✅ NEW: Allow manual error clearing
+    getCachedReservations,
   };
 };
