@@ -1,3 +1,5 @@
+// src/utils/constants.js - FIXED VERSION
+
 export const API_CONFIG = {
   BASE_URL: 'https://reservation-app-fhb8f7g7duanh7g2.centralus-01.azurewebsites.net', // Always use production
   TIMEOUT: 30000,
@@ -16,6 +18,19 @@ export const COLORS = {
     primary: '#2D2D30',
     secondary: '#8B8D97',
     inverse: '#FFFFFF',
+  },
+  // ADD THESE MISSING PROPERTIES
+  border: {
+    light: '#E0E0E0',    // Light border for cards and dividers
+    default: '#D0D0D0',  // Default border color
+    dark: '#B0B0B0',     // Darker border for emphasis
+  },
+  white: '#FFFFFF',      // Add white color for selectedTypeLabel styles
+  // ALSO ADD NESTED BACKGROUND PROPERTIES
+  background: {
+    default: '#F5F5F5',
+    card: '#FFFFFF',
+    error: '#FFEBEE',    // Light error background
   },
 };
 

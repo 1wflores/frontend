@@ -1,4 +1,6 @@
-import React, { useState, useCallback } from 'react';
+// src/screens/main/ReservationsScreen.jsx - COMPLETE FILE WITH EDIT SUPPORT
+
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -10,295 +12,438 @@ import {
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { useFocusEffect } from '@react-navigation/native';
+import { Card } from '../../components/common/Card';
+import { LoadingSpinner } from '../../components/common/LoadingSpinner';
+import { ReservationCard } from '../../components/reservation/ReservationCard';
+import EditReservationModal from '../../components/reservation/EditReservationModal';
 import { useLanguage } from '../../contexts/LanguageContext';
 import { useAuth } from '../../hooks/useAuth';
 import { useReservations } from '../../hooks/useReservations';
-import { ReservationCard } from '../../components/reservation/ReservationCard';
-import { Button } from '../../components/common/Button';
-import { LoadingSpinner } from '../../components/common/LoadingSpinner';
-import { ApiErrorTranslator } from '../../utils/apiErrorTranslator';
+import { useReservationEdit } from '../../hooks/useReservationEdit';
 import { DateUtils } from '../../utils/dateUtils';
+import { Localization } from '../../utils/localization';
 import { COLORS, SPACING, FONT_SIZES } from '../../utils/constants';
 
 const ReservationsScreen = ({ navigation }) => {
   const { t, language } = useLanguage();
   const { user } = useAuth();
-  const {
-    reservations,
-    loading,
-    error,
-    fetchUserReservations,
-    cancelReservation,
-  } = useReservations();
+  const { reservations, loading, fetchUserReservations, cancelReservation } = useReservations();
+  const { canEditReservation } = useReservationEdit();
   
-  const [selectedFilter, setSelectedFilter] = useState('upcoming');
   const [refreshing, setRefreshing] = useState(false);
+  const [selectedFilter, setSelectedFilter] = useState('all');
+  const [filteredReservations, setFilteredReservations] = useState([]);
+  const [selectedReservation, setSelectedReservation] = useState(null);
+  const [editModalVisible, setEditModalVisible] = useState(false);
 
-  // ✅ SIMPLIFIED: No need for frontend filtering - backend handles it
-  // Backend now only returns upcoming reservations for residents
-  // Admins get all reservations and can filter them
-
-  // ✅ UPDATED: Filters based on user role (simplified since backend filters)
-  const getFilters = () => {
-    if (user?.role === 'admin') {
-      // Admin sees all filters including past - they get all data from backend
-      return [
-        { key: 'all', label: t('all'), count: 0 },
-        { key: 'upcoming', label: t('upcoming'), count: 0 },
-        { key: 'pending', label: language === 'es' ? 'Pendientes' : 'Pending', count: 0 },
-        { key: 'past', label: language === 'es' ? 'Pasadas' : 'Past', count: 0 },
-      ];
-    } else {
-      // Regular users only see upcoming filters - backend only sends upcoming data
-      return [
-        { key: 'all', label: t('all'), count: 0 },
-        { key: 'upcoming', label: t('upcoming'), count: 0 },
-        { key: 'pending', label: language === 'es' ? 'Pendientes' : 'Pending', count: 0 },
-      ];
-    }
-  };
-
-  const filters = getFilters();
-
-  // Calculate filter counts - now using actual reservation data from backend
-  const now = new Date();
-  filters.forEach(filter => {
-    switch (filter.key) {
-      case 'all':
-        filter.count = reservations.length;
-        break;
-      case 'upcoming':
-        filter.count = reservations.filter(r => 
-          DateUtils.isFuture(r.startTime) && ['approved', 'pending'].includes(r.status)
-        ).length;
-        break;
-      case 'pending':
-        filter.count = reservations.filter(r => r.status === 'pending').length;
-        break;
-      case 'past':
-        // Only for admin - they receive all data
-        filter.count = reservations.filter(r => 
-          !DateUtils.isFuture(r.startTime) || ['completed', 'cancelled', 'denied'].includes(r.status)
-        ).length;
-        break;
-    }
-  });
-
-  // ✅ SIMPLIFIED: Frontend filtering (much simpler now)
-  const getFilteredReservations = () => {
-    switch (selectedFilter) {
-      case 'all':
-        return reservations;
-      case 'upcoming':
-        return reservations.filter(r => 
-          DateUtils.isFuture(r.startTime) && ['approved', 'pending'].includes(r.status)
-        );
-      case 'pending':
-        return reservations.filter(r => r.status === 'pending');
-      case 'past':
-        // Only for admin
-        return reservations.filter(r => 
-          !DateUtils.isFuture(r.startTime) || ['completed', 'cancelled', 'denied'].includes(r.status)
-        );
-      default:
-        return reservations;
-    }
-  };
-
-  const displayedReservations = getFilteredReservations();
-
+  // Load reservations on mount and focus
   useFocusEffect(
     useCallback(() => {
-      fetchUserReservations();
-    }, [fetchUserReservations])
+      loadReservations();
+    }, [])
   );
+
+  useEffect(() => {
+    filterReservations();
+  }, [reservations, selectedFilter]);
+
+  const loadReservations = async () => {
+    try {
+      await fetchUserReservations();
+    } catch (error) {
+      console.error('Error loading reservations:', error);
+      Alert.alert(
+        t('error') || 'Error',
+        language === 'es' 
+          ? 'No se pudieron cargar las reservas' 
+          : 'Failed to load reservations'
+      );
+    }
+  };
 
   const handleRefresh = async () => {
     setRefreshing(true);
-    try {
-      await fetchUserReservations();
-    } finally {
-      setRefreshing(false);
+    await loadReservations();
+    setRefreshing(false);
+  };
+
+  const filterReservations = () => {
+    let filtered = [...reservations];
+    const now = new Date();
+
+    switch (selectedFilter) {
+      case 'upcoming':
+        filtered = filtered.filter(r => {
+          const startTime = new Date(r.startTime);
+          return startTime > now && ['pending', 'approved', 'confirmed'].includes(r.status);
+        });
+        break;
+      case 'past':
+        filtered = filtered.filter(r => {
+          const endTime = new Date(r.endTime);
+          return endTime < now || r.status === 'completed';
+        });
+        break;
+      case 'pending':
+        filtered = filtered.filter(r => r.status === 'pending');
+        break;
+      case 'cancelled':
+        filtered = filtered.filter(r => ['cancelled', 'denied'].includes(r.status));
+        break;
+      default:
+        // 'all' - no filter
+        break;
+    }
+
+    // Sort by start time (most recent first for past, soonest first for upcoming)
+    filtered.sort((a, b) => {
+      const dateA = new Date(a.startTime);
+      const dateB = new Date(b.startTime);
+      
+      if (selectedFilter === 'past') {
+        return dateB - dateA; // Most recent first for past
+      } else {
+        return dateA - dateB; // Soonest first for upcoming
+      }
+    });
+
+    setFilteredReservations(filtered);
+  };
+
+  const handleReservationPress = (reservation) => {
+    setSelectedReservation(reservation);
+    
+    // Show options for editable reservations
+    if (canEditReservation(reservation)) {
+      showReservationOptions(reservation);
+    } else {
+      showReservationDetails(reservation);
     }
   };
 
-  const handleCancelReservation = async (reservation) => {
-    // ✅ ENHANCED: Cancellation confirmation with translations
+  const showReservationOptions = (reservation) => {
+    const options = [];
+    const destructiveOptions = [];
+    
+    // Add view details option
+    options.push({
+      text: language === 'es' ? 'Ver detalles' : 'View details',
+      onPress: () => showReservationDetails(reservation)
+    });
+    
+    // Add edit option for eligible reservations
+    if (canEditReservation(reservation)) {
+      options.push({
+        text: language === 'es' ? 'Editar reserva' : 'Edit reservation',
+        onPress: () => handleEditReservation(reservation)
+      });
+    }
+    
+    // Add cancel option for cancellable reservations
+    const cancellableStatuses = ['pending', 'approved', 'confirmed'];
+    if (cancellableStatuses.includes(reservation.status)) {
+      destructiveOptions.push({
+        text: language === 'es' ? 'Cancelar reserva' : 'Cancel reservation',
+        style: 'destructive',
+        onPress: () => handleCancelReservation(reservation)
+      });
+    }
+    
+    // Show action sheet
     Alert.alert(
-      language === 'es' ? 'Cancelar Reservación' : 'Cancel Reservation',
-      language === 'es' 
-        ? `¿Está seguro de que desea cancelar su reservación de ${reservation.amenityName} el ${DateUtils.formatDate(reservation.startTime)}?`
-        : `Are you sure you want to cancel your reservation for ${reservation.amenityName} on ${DateUtils.formatDate(reservation.startTime)}?`,
+      Localization.translateAmenity(reservation.amenityName, language),
+      DateUtils.formatDateTime(new Date(reservation.startTime), language),
       [
+        ...options,
+        ...destructiveOptions,
         {
-          text: t('cancel') || 'Cancel',
-          style: 'cancel',
-        },
-        {
-          text: language === 'es' ? 'Cancelar Reservación' : 'Cancel Reservation',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await cancelReservation(reservation.id);
-              Alert.alert(
-                t('success') || 'Success',
-                language === 'es' 
-                  ? 'Reservación cancelada exitosamente'
-                  : 'Reservation cancelled successfully'
-              );
-            } catch (error) {
-              console.error('❌ Error cancelling reservation:', error);
-              const errorMessage = ApiErrorTranslator.extractAndTranslateError(error, language);
-              Alert.alert(t('error') || 'Error', errorMessage);
-            }
-          },
-        },
+          text: language === 'es' ? 'Cerrar' : 'Close',
+          style: 'cancel'
+        }
       ]
     );
   };
 
-  const renderReservationItem = ({ item: reservation }) => (
-    <ReservationCard
-      reservation={reservation}
-      onCancel={handleCancelReservation}
-      language={language}
-      user={user}
-    />
-  );
-
-  const renderFilterButton = (filter) => {
-    const isSelected = selectedFilter === filter.key;
-    return (
-      <TouchableOpacity
-        key={filter.key}
-        style={[
-          styles.filterButton,
-          isSelected && styles.filterButtonActive
-        ]}
-        onPress={() => setSelectedFilter(filter.key)}
-      >
-        <Text style={[
-          styles.filterButtonText,
-          isSelected && styles.filterButtonTextActive
-        ]}>
-          {filter.label}
-        </Text>
-        {filter.count > 0 && (
-          <View style={[
-            styles.countBadge,
-            isSelected && styles.countBadgeActive
-          ]}>
-            <Text style={[
-              styles.countText,
-              isSelected && styles.countTextActive
-            ]}>
-              {filter.count}
-            </Text>
-          </View>
-        )}
-      </TouchableOpacity>
+  const showReservationDetails = (reservation) => {
+    const isLounge = reservation.amenityType === 'lounge' || 
+                    reservation.amenityName?.toLowerCase().includes('lounge');
+    
+    let details = `${t('amenity') || 'Amenity'}: ${Localization.translateAmenity(reservation.amenityName, language)}\n`;
+    details += `${t('date') || 'Date'}: ${DateUtils.formatDate(new Date(reservation.startTime), language)}\n`;
+    details += `${t('time') || 'Time'}: ${DateUtils.formatTime(new Date(reservation.startTime))} - ${DateUtils.formatTime(new Date(reservation.endTime))}\n`;
+    details += `${t('status') || 'Status'}: ${Localization.translateStatus(reservation.status, language)}`;
+    
+    // Add lounge-specific details if applicable
+    if (isLounge && reservation.visitorCount) {
+      details += `\n${language === 'es' ? 'Visitantes' : 'Visitors'}: ${reservation.visitorCount}`;
+    }
+    
+    if (isLounge && reservation.willUseGrill !== undefined) {
+      details += `\n${language === 'es' ? 'Uso de parrilla' : 'Grill usage'}: ${
+        reservation.willUseGrill 
+          ? (language === 'es' ? 'Sí' : 'Yes')
+          : (language === 'es' ? 'No' : 'No')
+      }`;
+    }
+    
+    if (reservation.notes) {
+      details += `\n\n${t('notes') || 'Notes'}: ${reservation.notes}`;
+    }
+    
+    if (reservation.status === 'denied' && reservation.denialReason) {
+      details += `\n\n${language === 'es' ? 'Razón del rechazo' : 'Rejection reason'}: ${reservation.denialReason}`;
+    }
+    
+    Alert.alert(
+      language === 'es' ? 'Detalles de la Reserva' : 'Reservation Details',
+      details,
+      [{ text: 'OK' }]
     );
   };
 
-  const renderEmptyState = () => (
-    <View style={styles.emptyState}>
-      <Icon name="event-available" size={80} color={COLORS.gray} />
-      <Text style={styles.emptyTitle}>
-        {language === 'es' ? 'No hay reservaciones' : 'No Reservations'}
-      </Text>
-      <Text style={styles.emptyMessage}>
-        {selectedFilter === 'pending'
-          ? (language === 'es' 
-            ? 'No tienes reservaciones pendientes'
-            : 'You have no pending reservations')
-          : selectedFilter === 'past' && user?.role === 'admin'
-          ? (language === 'es'
-            ? 'No se encontraron reservaciones pasadas'
-            : 'No past reservations found')
-          : (language === 'es'
-            ? 'Toca el botón de abajo para crear tu primera reservación'
-            : 'Tap the button below to create your first reservation')
+  const handleEditReservation = (reservation) => {
+    setSelectedReservation(reservation);
+    setEditModalVisible(true);
+  };
+
+  const handleReservationUpdate = (updatedReservation) => {
+    // Update the reservation in the local state
+    const updatedReservations = reservations.map(res => 
+      res.id === updatedReservation.id ? updatedReservation : res
+    );
+    
+    // Trigger a refresh to get the latest data
+    loadReservations();
+    
+    // Show success message
+    Alert.alert(
+      t('success') || 'Success',
+      language === 'es'
+        ? 'Reserva actualizada exitosamente'
+        : 'Reservation updated successfully'
+    );
+  };
+
+  const handleCancelReservation = (reservation) => {
+    Alert.alert(
+      language === 'es' ? 'Confirmar Cancelación' : 'Confirm Cancellation',
+      language === 'es' 
+        ? '¿Está seguro de que desea cancelar esta reserva?'
+        : 'Are you sure you want to cancel this reservation?',
+      [
+        {
+          text: language === 'es' ? 'No' : 'No',
+          style: 'cancel'
+        },
+        {
+          text: language === 'es' ? 'Sí, Cancelar' : 'Yes, Cancel',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await cancelReservation(reservation.id);
+              await loadReservations();
+              Alert.alert(
+                t('success') || 'Success',
+                language === 'es'
+                  ? 'Reserva cancelada exitosamente'
+                  : 'Reservation cancelled successfully'
+              );
+            } catch (error) {
+              console.error('Error cancelling reservation:', error);
+              Alert.alert(
+                t('error') || 'Error',
+                language === 'es'
+                  ? 'No se pudo cancelar la reserva'
+                  : 'Failed to cancel reservation'
+              );
+            }
+          }
         }
+      ]
+    );
+  };
+
+  const renderFilterButton = (filter, label) => (
+    <TouchableOpacity
+      style={[
+        styles.filterButton,
+        selectedFilter === filter && styles.activeFilterButton
+      ]}
+      onPress={() => setSelectedFilter(filter)}
+    >
+      <Text style={[
+        styles.filterText,
+        selectedFilter === filter && styles.activeFilterText
+      ]}>
+        {label}
       </Text>
-      {selectedFilter !== 'past' && (
-        <Button
-          title={language === 'es' ? 'Crear Reservación' : 'Create Reservation'}
-          onPress={() => navigation.navigate('CreateReservation')}
-          style={styles.createButton}
-        />
-      )}
-    </View>
+    </TouchableOpacity>
   );
 
-  if (loading && reservations.length === 0) {
+  const renderEmptyState = () => {
+    let message = '';
+    let icon = 'event-busy';
+    
+    switch (selectedFilter) {
+      case 'upcoming':
+        message = language === 'es' 
+          ? 'No tienes reservas próximas'
+          : 'You have no upcoming reservations';
+        icon = 'event-available';
+        break;
+      case 'past':
+        message = language === 'es'
+          ? 'No tienes reservas pasadas'
+          : 'You have no past reservations';
+        icon = 'history';
+        break;
+      case 'pending':
+        message = language === 'es'
+          ? 'No tienes reservas pendientes'
+          : 'You have no pending reservations';
+        icon = 'schedule';
+        break;
+      case 'cancelled':
+        message = language === 'es'
+          ? 'No tienes reservas canceladas'
+          : 'You have no cancelled reservations';
+        icon = 'cancel';
+        break;
+      default:
+        message = language === 'es'
+          ? 'No tienes reservas aún'
+          : 'You have no reservations yet';
+        icon = 'event-note';
+    }
+    
     return (
-      <View style={styles.loadingContainer}>
-        <LoadingSpinner />
+      <View style={styles.emptyState}>
+        <Icon name={icon} size={64} color={COLORS.text.secondary} />
+        <Text style={styles.emptyTitle}>{message}</Text>
+        <Text style={styles.emptyText}>
+          {language === 'es'
+            ? 'Reserva una amenidad para comenzar'
+            : 'Book an amenity to get started'}
+        </Text>
       </View>
     );
+  };
+
+  const renderReservation = ({ item }) => (
+    <ReservationCard
+      reservation={item}
+      onPress={() => handleReservationPress(item)}
+      onUpdate={handleReservationUpdate}
+      showActions={true}
+      isAdmin={false}
+    />
+  );
+
+  const getStatistics = () => {
+    const now = new Date();
+    const stats = {
+      total: reservations.length,
+      upcoming: reservations.filter(r => {
+        const startTime = new Date(r.startTime);
+        return startTime > now && ['pending', 'approved', 'confirmed'].includes(r.status);
+      }).length,
+      pending: reservations.filter(r => r.status === 'pending').length,
+      completed: reservations.filter(r => r.status === 'completed' || new Date(r.endTime) < now).length
+    };
+    return stats;
+  };
+
+  const stats = getStatistics();
+
+  if (loading && reservations.length === 0) {
+    return <LoadingSpinner message={t('loading')} />;
   }
 
   return (
     <View style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <Text style={styles.title}>
-          {language === 'es' ? 'Mis Reservaciones' : 'My Reservations'}
-        </Text>
-        {user?.role !== 'admin' && (
-          <TouchableOpacity 
-            style={styles.addButton}
-            onPress={() => navigation.navigate('CreateReservation')}
-          >
-            <Icon name="add" size={24} color={COLORS.white} />
-          </TouchableOpacity>
-        )}
+      {/* Statistics Cards */}
+      <View style={styles.statsContainer}>
+        <Card style={styles.statCard}>
+          <Icon name="event" size={24} color={COLORS.primary} />
+          <Text style={styles.statNumber}>{stats.total}</Text>
+          <Text style={styles.statLabel}>
+            {language === 'es' ? 'Total' : 'Total'}
+          </Text>
+        </Card>
+        
+        <Card style={styles.statCard}>
+          <Icon name="event-available" size={24} color={COLORS.success} />
+          <Text style={styles.statNumber}>{stats.upcoming}</Text>
+          <Text style={styles.statLabel}>
+            {language === 'es' ? 'Próximas' : 'Upcoming'}
+          </Text>
+        </Card>
+        
+        <Card style={styles.statCard}>
+          <Icon name="schedule" size={24} color={COLORS.warning} />
+          <Text style={styles.statNumber}>{stats.pending}</Text>
+          <Text style={styles.statLabel}>
+            {language === 'es' ? 'Pendientes' : 'Pending'}
+          </Text>
+        </Card>
+        
+        <Card style={styles.statCard}>
+          <Icon name="check-circle" size={24} color={COLORS.text.secondary} />
+          <Text style={styles.statNumber}>{stats.completed}</Text>
+          <Text style={styles.statLabel}>
+            {language === 'es' ? 'Pasadas' : 'Past'}
+          </Text>
+        </Card>
       </View>
 
-      {/* Filter Tabs */}
+      {/* Filter Buttons */}
       <View style={styles.filterContainer}>
-        {filters.map(renderFilterButton)}
+        <ScrollView 
+          horizontal 
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.filterScrollContent}
+        >
+          {renderFilterButton('all', language === 'es' ? 'Todas' : 'All')}
+          {renderFilterButton('upcoming', language === 'es' ? 'Próximas' : 'Upcoming')}
+          {renderFilterButton('past', language === 'es' ? 'Pasadas' : 'Past')}
+          {renderFilterButton('pending', language === 'es' ? 'Pendientes' : 'Pending')}
+          {renderFilterButton('cancelled', language === 'es' ? 'Canceladas' : 'Cancelled')}
+        </ScrollView>
       </View>
-
-      {/* Error Message */}
-      {error && (
-        <View style={styles.errorContainer}>
-          <Text style={styles.errorText}>{error}</Text>
-          <TouchableOpacity onPress={() => fetchUserReservations()}>
-            <Text style={styles.retryText}>
-              {language === 'es' ? 'Intentar de nuevo' : 'Try again'}
-            </Text>
-          </TouchableOpacity>
-        </View>
-      )}
 
       {/* Reservations List */}
       <FlatList
-        data={displayedReservations}
-        renderItem={renderReservationItem}
+        data={filteredReservations}
+        renderItem={renderReservation}
         keyExtractor={(item) => item.id}
-        contentContainerStyle={[
-          styles.listContainer,
-          displayedReservations.length === 0 && styles.emptyListContainer
-        ]}
+        contentContainerStyle={styles.listContent}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
             onRefresh={handleRefresh}
             colors={[COLORS.primary]}
+            tintColor={COLORS.primary}
           />
         }
         ListEmptyComponent={renderEmptyState}
         showsVerticalScrollIndicator={false}
       />
 
-      {/* Admin Badge */}
-      {user?.role === 'admin' && (
-        <View style={styles.adminBadge}>
-          <Text style={styles.adminBadgeText}>
-            {language === 'es' ? 'Vista Administrador' : 'Admin View'}
-          </Text>
-        </View>
+      {/* Edit Reservation Modal */}
+      {selectedReservation && (
+        <EditReservationModal
+          visible={editModalVisible}
+          reservation={selectedReservation}
+          onClose={() => {
+            setEditModalVisible(false);
+            setSelectedReservation(null);
+          }}
+          onUpdate={(updatedReservation) => {
+            handleReservationUpdate(updatedReservation);
+            setEditModalVisible(false);
+            setSelectedReservation(null);
+          }}
+        />
       )}
     </View>
   );
@@ -309,146 +454,81 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: COLORS.background,
   },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: COLORS.background,
-  },
-  header: {
+  statsContainer: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
     paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.sm,
-    backgroundColor: COLORS.white,
-    elevation: 2,
-    shadowColor: COLORS.black,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
+    paddingVertical: SPACING.md,
+    gap: SPACING.sm,
   },
-  title: {
+  statCard: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: SPACING.sm,
+  },
+  statNumber: {
     fontSize: FONT_SIZES.xl,
     fontWeight: 'bold',
-    color: COLORS.text,
+    color: COLORS.text.primary,
+    marginTop: SPACING.xs,
   },
-  addButton: {
-    backgroundColor: COLORS.primary,
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    justifyContent: 'center',
-    alignItems: 'center',
+  statLabel: {
+    fontSize: FONT_SIZES.xs,
+    color: COLORS.text.secondary,
+    marginTop: SPACING.xs / 2,
   },
   filterContainer: {
-    flexDirection: 'row',
-    paddingHorizontal: SPACING.md,
+    backgroundColor: COLORS.surface,
     paddingVertical: SPACING.sm,
-    backgroundColor: COLORS.white,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border.light,
+  },
+  filterScrollContent: {
+    paddingHorizontal: SPACING.md,
+    gap: SPACING.sm,
   },
   filterButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: SPACING.sm,
-    paddingVertical: SPACING.xs,
-    marginRight: SPACING.sm,
-    borderRadius: 20,
-    backgroundColor: COLORS.lightGray,
-  },
-  filterButtonActive: {
-    backgroundColor: COLORS.primary,
-  },
-  filterButtonText: {
-    fontSize: FONT_SIZES.sm,
-    color: COLORS.gray,
-    fontWeight: '500',
-  },
-  filterButtonTextActive: {
-    color: COLORS.white,
-  },
-  countBadge: {
-    backgroundColor: COLORS.gray,
-    borderRadius: 10,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    marginLeft: 4,
-  },
-  countBadgeActive: {
-    backgroundColor: COLORS.white,
-  },
-  countText: {
-    fontSize: FONT_SIZES.xs,
-    color: COLORS.white,
-    fontWeight: 'bold',
-  },
-  countTextActive: {
-    color: COLORS.primary,
-  },
-  errorContainer: {
-    backgroundColor: COLORS.error,
-    padding: SPACING.md,
-    marginHorizontal: SPACING.md,
-    marginVertical: SPACING.sm,
-    borderRadius: 8,
-  },
-  errorText: {
-    color: COLORS.white,
-    fontSize: FONT_SIZES.sm,
-    textAlign: 'center',
-    marginBottom: 4,
-  },
-  retryText: {
-    color: COLORS.white,
-    fontSize: FONT_SIZES.sm,
-    textAlign: 'center',
-    fontWeight: 'bold',
-    textDecorationLine: 'underline',
-  },
-  listContainer: {
     paddingHorizontal: SPACING.md,
     paddingVertical: SPACING.sm,
+    borderRadius: 20,
+    backgroundColor: COLORS.background,
+    borderWidth: 1,
+    borderColor: COLORS.border.light,
+    marginRight: SPACING.sm,
   },
-  emptyListContainer: {
+  activeFilterButton: {
+    backgroundColor: COLORS.primary,
+    borderColor: COLORS.primary,
+  },
+  filterText: {
+    fontSize: FONT_SIZES.sm,
+    color: COLORS.text.secondary,
+    fontWeight: '600',
+  },
+  activeFilterText: {
+    color: COLORS.white,
+  },
+  listContent: {
     flexGrow: 1,
+    paddingVertical: SPACING.sm,
   },
   emptyState: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: SPACING.lg,
+    paddingHorizontal: SPACING.xl,
+    paddingVertical: SPACING.xxl,
   },
   emptyTitle: {
     fontSize: FONT_SIZES.lg,
-    fontWeight: 'bold',
-    color: COLORS.text,
+    fontWeight: '600',
+    color: COLORS.text.primary,
     marginTop: SPACING.md,
-    marginBottom: SPACING.sm,
-    textAlign: 'center',
+    marginBottom: SPACING.xs,
   },
-  emptyMessage: {
+  emptyText: {
     fontSize: FONT_SIZES.md,
-    color: COLORS.gray,
+    color: COLORS.text.secondary,
     textAlign: 'center',
-    lineHeight: 20,
-    marginBottom: SPACING.lg,
-  },
-  createButton: {
-    paddingHorizontal: SPACING.xl,
-  },
-  adminBadge: {
-    position: 'absolute',
-    top: 10,
-    right: 10,
-    backgroundColor: COLORS.warning,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
-  adminBadgeText: {
-    fontSize: FONT_SIZES.xs,
-    color: COLORS.white,
-    fontWeight: 'bold',
   },
 });
 
