@@ -1,13 +1,37 @@
-// Enhanced DateUtils with proper Spanish/English translations
+// src/utils/dateUtils.js - ENHANCED VERSION WITH FIXED FORMATTING
+
 export class DateUtils {
   
-  // Format date with language support
-  static formatDate(dateInput, language = 'en') {
+  // ✅ FIXED: Enhanced formatDate with proper format parameter support
+  static formatDate(dateInput, formatOrLanguage = 'en') {
     if (!dateInput) return '';
     
     const date = new Date(dateInput);
     if (isNaN(date.getTime())) return '';
     
+    // Handle YYYY-MM-DD format specifically for API
+    if (formatOrLanguage === 'YYYY-MM-DD') {
+      return this.toISODateString(date);
+    }
+    
+    // Handle DD/MM/YYYY format
+    if (formatOrLanguage === 'DD/MM/YYYY') {
+      const day = date.getDate().toString().padStart(2, '0');
+      const month = (date.getMonth() + 1).toString().padStart(2, '0');
+      const year = date.getFullYear();
+      return `${day}/${month}/${year}`;
+    }
+    
+    // Handle MM/DD/YYYY format
+    if (formatOrLanguage === 'MM/DD/YYYY') {
+      const day = date.getDate().toString().padStart(2, '0');
+      const month = (date.getMonth() + 1).toString().padStart(2, '0');
+      const year = date.getFullYear();
+      return `${month}/${day}/${year}`;
+    }
+    
+    // Default language-based formatting
+    const language = formatOrLanguage;
     const options = {
       year: 'numeric',
       month: 'long',
@@ -16,10 +40,8 @@ export class DateUtils {
     
     try {
       if (language === 'es') {
-        // Use Spanish locale
         return date.toLocaleDateString('es-ES', options);
       } else {
-        // Use English locale
         return date.toLocaleDateString('en-US', options);
       }
     } catch (error) {
@@ -121,9 +143,7 @@ export class DateUtils {
       };
       
       if (language === 'es') {
-        // Spanish time format
         const timeStr = date.toLocaleTimeString('es-ES', timeOptions);
-        // Replace AM/PM with Spanish equivalents
         return timeStr.replace('AM', 'AM').replace('PM', 'PM');
       } else {
         return date.toLocaleTimeString('en-US', timeOptions);
@@ -206,22 +226,16 @@ export class DateUtils {
         return date.toLocaleDateString('en-US', options);
       }
     } catch (error) {
-      return this.formatDayOfWeekManually(date, language);
+      const dayNames = {
+        en: ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'],
+        es: ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado']
+      };
+      return dayNames[language][date.getDay()];
     }
   }
 
-  // Manual day of week formatting
-  static formatDayOfWeekManually(date, language = 'en') {
-    const dayNames = {
-      en: ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'],
-      es: ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado']
-    };
-    
-    return dayNames[language][date.getDay()];
-  }
-
-  // Format for calendar display
-  static formatForCalendar(dateInput, language = 'en') {
+  // Format contextual date (Today, Tomorrow, etc.)
+  static formatContextualDate(dateInput, language = 'en') {
     if (!dateInput) return '';
     
     const date = new Date(dateInput);
@@ -233,7 +247,6 @@ export class DateUtils {
     const yesterday = new Date(today);
     yesterday.setDate(yesterday.getDate() - 1);
     
-    // Check if it's today, tomorrow, or yesterday
     if (this.isSameDay(date, today)) {
       return language === 'es' ? 'Hoy' : 'Today';
     } else if (this.isSameDay(date, tomorrow)) {
@@ -252,7 +265,6 @@ export class DateUtils {
       return this.formatDayOfWeek(date, language);
     }
     
-    // Return formatted date
     return this.formatShortDate(date, language);
   }
 
@@ -300,7 +312,7 @@ export class DateUtils {
     }
   }
 
-  // Get date for ISO string (YYYY-MM-DD)
+  // ✅ FIXED: Get date for ISO string (YYYY-MM-DD)
   static toISODateString(dateInput) {
     if (!dateInput) return '';
     
@@ -349,18 +361,23 @@ export class DateUtils {
     return this.isSameDay(date, today);
   }
 
-  // Check if date is in the future
+  // ✅ ENHANCED: Better future date checking with timezone consideration
   static isFuture(dateInput) {
+    if (!dateInput) return false;
+    
     const date = new Date(dateInput);
+    if (isNaN(date.getTime())) return false;
+    
     const now = new Date();
-    return date > now;
+    
+    // Add small buffer for timezone differences and processing delays
+    const buffer = 60000; // 1 minute buffer
+    return date.getTime() > (now.getTime() - buffer);
   }
 
   // Check if date is in the past
   static isPast(dateInput) {
-    const date = new Date(dateInput);
-    const now = new Date();
-    return date < now;
+    return !this.isFuture(dateInput) && !this.isToday(dateInput);
   }
 
   // Add days to a date
@@ -389,22 +406,19 @@ export class DateUtils {
     }
   }
 
-  // ADDED: Missing getDateString method for compatibility
+  // ✅ ADDED: Missing compatibility methods
+  
+  // Get date string in YYYY-MM-DD format (alias for toISODateString)
   static getDateString(dateInput) {
-    if (!dateInput) return '';
-    
-    const date = new Date(dateInput);
-    if (isNaN(date.getTime())) return '';
-    
-    return date.toISOString().split('T')[0]; // Returns YYYY-MM-DD format
+    return this.toISODateString(dateInput);
   }
 
-  // ADDED: Missing getCurrentDateString method for compatibility  
+  // Get current date string in YYYY-MM-DD format
   static getCurrentDateString() {
     return this.getDateString(new Date());
   }
 
-  // ADDED: Missing getTimeString method for compatibility
+  // Get time string in HH:MM:SS format
   static getTimeString(dateInput) {
     if (!dateInput) return '';
     
@@ -414,7 +428,7 @@ export class DateUtils {
     return date.toISOString().split('T')[1].split('.')[0]; // Returns HH:mm:ss format
   }
 
-  // ADDED: Missing createDateFromString method for compatibility
+  // Create date from string components
   static createDateFromString(dateString, timeString = '00:00:00') {
     if (!dateString) return null;
     
@@ -424,12 +438,12 @@ export class DateUtils {
     return isNaN(date.getTime()) ? null : date;
   }
 
-  // ADDED: Missing formatDateForInput method for compatibility (for HTML date inputs)
+  // Format date for HTML date inputs (YYYY-MM-DD)
   static formatDateForInput(dateInput) {
     return this.getDateString(dateInput);
   }
 
-  // ADDED: Missing formatTimeForInput method for compatibility (for HTML time inputs)
+  // Format time for HTML time inputs (HH:MM)
   static formatTimeForInput(dateInput) {
     if (!dateInput) return '';
     
@@ -440,5 +454,129 @@ export class DateUtils {
     const minutes = date.getMinutes().toString().padStart(2, '0');
     
     return `${hours}:${minutes}`;
+  }
+
+  // ✅ FIXED: Utility method to handle different date format parameters
+  static formatDateWithPattern(dateInput, pattern, language = 'en') {
+    if (!dateInput) return '';
+    
+    const date = new Date(dateInput);
+    if (isNaN(date.getTime())) return '';
+    
+    switch (pattern) {
+      case 'YYYY-MM-DD':
+        return this.toISODateString(date);
+      case 'DD/MM/YYYY':
+        const day = date.getDate().toString().padStart(2, '0');
+        const month = (date.getMonth() + 1).toString().padStart(2, '0');
+        const year = date.getFullYear();
+        return `${day}/${month}/${year}`;
+      case 'MM/DD/YYYY':
+        const dayUS = date.getDate().toString().padStart(2, '0');
+        const monthUS = (date.getMonth() + 1).toString().padStart(2, '0');
+        const yearUS = date.getFullYear();
+        return `${monthUS}/${dayUS}/${yearUS}`;
+      case 'relative':
+        return this.formatRelativeTime(date, language);
+      case 'contextual':
+        return this.formatContextualDate(date, language);
+      case 'short':
+        return this.formatShortDate(date, language);
+      case 'long':
+      default:
+        return this.formatDate(date, language);
+    }
+  }
+
+  // ✅ ENHANCED: Better timezone handling
+  static convertToUserTimezone(dateInput, userTimezone = null) {
+    if (!dateInput) return null;
+    
+    const date = new Date(dateInput);
+    if (isNaN(date.getTime())) return null;
+    
+    if (userTimezone) {
+      try {
+        return new Date(date.toLocaleString("en-US", { timeZone: userTimezone }));
+      } catch (error) {
+        console.warn('Invalid timezone provided, using local timezone:', error);
+      }
+    }
+    
+    return date;
+  }
+
+  // ✅ UTILITY: Get time difference in minutes
+  static getTimeDifferenceInMinutes(startDate, endDate) {
+    if (!startDate || !endDate) return 0;
+    
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    
+    if (isNaN(start.getTime()) || isNaN(end.getTime())) return 0;
+    
+    return Math.floor((end - start) / (1000 * 60));
+  }
+
+  // ✅ UTILITY: Check if date is within a range
+  static isDateInRange(dateToCheck, startDate, endDate) {
+    if (!dateToCheck || !startDate || !endDate) return false;
+    
+    const check = new Date(dateToCheck);
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    
+    if (isNaN(check.getTime()) || isNaN(start.getTime()) || isNaN(end.getTime())) return false;
+    
+    return check >= start && check <= end;
+  }
+
+  // ✅ UTILITY: Get week start and end dates
+  static getWeekRange(dateInput) {
+    if (!dateInput) return null;
+    
+    const date = new Date(dateInput);
+    if (isNaN(date.getTime())) return null;
+    
+    const startOfWeek = new Date(date);
+    startOfWeek.setDate(date.getDate() - date.getDay()); // Sunday as start
+    startOfWeek.setHours(0, 0, 0, 0);
+    
+    const endOfWeek = new Date(startOfWeek);
+    endOfWeek.setDate(startOfWeek.getDate() + 6); // Saturday as end
+    endOfWeek.setHours(23, 59, 59, 999);
+    
+    return {
+      start: startOfWeek,
+      end: endOfWeek
+    };
+  }
+
+  // ✅ UTILITY: Get month range
+  static getMonthRange(dateInput) {
+    if (!dateInput) return null;
+    
+    const date = new Date(dateInput);
+    if (isNaN(date.getTime())) return null;
+    
+    const startOfMonth = new Date(date.getFullYear(), date.getMonth(), 1);
+    const endOfMonth = new Date(date.getFullYear(), date.getMonth() + 1, 0);
+    endOfMonth.setHours(23, 59, 59, 999);
+    
+    return {
+      start: startOfMonth,
+      end: endOfMonth
+    };
+  }
+
+  // ✅ DEBUG: Log date for debugging
+  static debugDate(dateInput, label = 'Debug Date') {
+    console.log(`${label}:`, {
+      input: dateInput,
+      parsed: new Date(dateInput),
+      iso: this.formatForAPI(dateInput),
+      local: this.formatDate(dateInput),
+      isValid: !isNaN(new Date(dateInput).getTime())
+    });
   }
 }

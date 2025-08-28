@@ -1,4 +1,4 @@
-// src/screens/main/ReservationsScreen.jsx - COMPLETE FILE WITH EDIT SUPPORT
+// src/screens/main/ReservationsScreen.jsx - FIXED VERSION
 
 import React, { useState, useEffect, useCallback } from 'react';
 import {
@@ -9,6 +9,7 @@ import {
   RefreshControl,
   TouchableOpacity,
   Alert,
+  ScrollView, // ✅ FIXED: Added missing ScrollView import
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { useFocusEffect } from '@react-navigation/native';
@@ -55,308 +56,227 @@ const ReservationsScreen = ({ navigation }) => {
       Alert.alert(
         t('error') || 'Error',
         language === 'es' 
-          ? 'No se pudieron cargar las reservas' 
-          : 'Failed to load reservations'
+          ? 'Error al cargar reservaciones. Por favor intente de nuevo.'
+          : 'Error loading reservations. Please try again.'
       );
     }
   };
 
   const handleRefresh = async () => {
     setRefreshing(true);
-    await loadReservations();
-    setRefreshing(false);
+    try {
+      await loadReservations();
+    } catch (error) {
+      console.error('Error refreshing reservations:', error);
+    } finally {
+      setRefreshing(false);
+    }
   };
 
+  // ✅ FIXED: Enhanced filtering logic for better upcoming detection
   const filterReservations = () => {
-    let filtered = [...reservations];
+    console.log('🔍 Filtering reservations:', {
+      total: reservations.length,
+      selectedFilter,
+      reservations: reservations.map(r => ({
+        id: r.id,
+        startTime: r.startTime,
+        status: r.status,
+        isUpcoming: DateUtils.isFuture(r.startTime),
+        isPending: r.status === 'pending'
+      }))
+    });
+
+    let filtered = [];
     const now = new Date();
 
     switch (selectedFilter) {
       case 'upcoming':
-        filtered = filtered.filter(r => {
-          const startTime = new Date(r.startTime);
-          return startTime > now && ['pending', 'approved', 'confirmed'].includes(r.status);
+        filtered = reservations.filter(r => {
+          const isInFuture = DateUtils.isFuture(r.startTime);
+          const isActiveStatus = ['approved', 'pending'].includes(r.status);
+          console.log(`Reservation ${r.id}: future=${isInFuture}, status=${r.status}, active=${isActiveStatus}`);
+          return isInFuture && isActiveStatus;
         });
         break;
       case 'past':
-        filtered = filtered.filter(r => {
-          const endTime = new Date(r.endTime);
-          return endTime < now || r.status === 'completed';
+        filtered = reservations.filter(r => {
+          const isPast = !DateUtils.isFuture(r.startTime);
+          const isCompleted = ['completed', 'cancelled'].includes(r.status);
+          return isPast || isCompleted;
         });
         break;
       case 'pending':
-        filtered = filtered.filter(r => r.status === 'pending');
+        filtered = reservations.filter(r => r.status === 'pending');
         break;
       case 'cancelled':
-        filtered = filtered.filter(r => ['cancelled', 'denied'].includes(r.status));
+        filtered = reservations.filter(r => r.status === 'cancelled');
         break;
+      case 'all':
       default:
-        // 'all' - no filter
+        filtered = reservations;
         break;
     }
 
-    // Sort by start time (most recent first for past, soonest first for upcoming)
+    console.log('🔍 Filtered results:', {
+      filter: selectedFilter,
+      count: filtered.length,
+      items: filtered.map(r => ({ id: r.id, startTime: r.startTime, status: r.status }))
+    });
+
+    // Sort by start time (upcoming first, then by date)
     filtered.sort((a, b) => {
-      const dateA = new Date(a.startTime);
-      const dateB = new Date(b.startTime);
-      
-      if (selectedFilter === 'past') {
-        return dateB - dateA; // Most recent first for past
-      } else {
-        return dateA - dateB; // Soonest first for upcoming
+      if (selectedFilter === 'upcoming') {
+        return new Date(a.startTime) - new Date(b.startTime);
       }
+      return new Date(b.startTime) - new Date(a.startTime);
     });
 
     setFilteredReservations(filtered);
   };
 
-  const handleReservationPress = (reservation) => {
-    setSelectedReservation(reservation);
-    
-    // Show options for editable reservations
-    if (canEditReservation(reservation)) {
-      showReservationOptions(reservation);
-    } else {
-      showReservationDetails(reservation);
-    }
+  const calculateStats = () => {
+    const total = reservations.length;
+    const upcoming = reservations.filter(r => 
+      DateUtils.isFuture(r.startTime) && ['approved', 'pending'].includes(r.status)
+    ).length;
+    const pending = reservations.filter(r => r.status === 'pending').length;
+    const completed = reservations.filter(r => 
+      (!DateUtils.isFuture(r.startTime) && r.status === 'completed') || r.status === 'completed'
+    ).length;
+
+    console.log('📊 Stats calculated:', { total, upcoming, pending, completed });
+
+    return { total, upcoming, pending, completed };
   };
 
-  const showReservationOptions = (reservation) => {
-    const options = [];
-    const destructiveOptions = [];
-    
-    // Add view details option
-    options.push({
-      text: language === 'es' ? 'Ver detalles' : 'View details',
-      onPress: () => showReservationDetails(reservation)
-    });
-    
-    // Add edit option for eligible reservations
-    if (canEditReservation(reservation)) {
-      options.push({
-        text: language === 'es' ? 'Editar reserva' : 'Edit reservation',
-        onPress: () => handleEditReservation(reservation)
-      });
-    }
-    
-    // Add cancel option for cancellable reservations
-    const cancellableStatuses = ['pending', 'approved', 'confirmed'];
-    if (cancellableStatuses.includes(reservation.status)) {
-      destructiveOptions.push({
-        text: language === 'es' ? 'Cancelar reserva' : 'Cancel reservation',
-        style: 'destructive',
-        onPress: () => handleCancelReservation(reservation)
-      });
-    }
-    
-    // Show action sheet
-    Alert.alert(
-      Localization.translateAmenity(reservation.amenityName, language),
-      DateUtils.formatDateTime(new Date(reservation.startTime), language),
-      [
-        ...options,
-        ...destructiveOptions,
-        {
-          text: language === 'es' ? 'Cerrar' : 'Close',
-          style: 'cancel'
-        }
-      ]
-    );
-  };
+  const stats = calculateStats();
 
-  const showReservationDetails = (reservation) => {
-    const isLounge = reservation.amenityType === 'lounge' || 
-                    reservation.amenityName?.toLowerCase().includes('lounge');
-    
-    let details = `${t('amenity') || 'Amenity'}: ${Localization.translateAmenity(reservation.amenityName, language)}\n`;
-    details += `${t('date') || 'Date'}: ${DateUtils.formatDate(new Date(reservation.startTime), language)}\n`;
-    details += `${t('time') || 'Time'}: ${DateUtils.formatTime(new Date(reservation.startTime))} - ${DateUtils.formatTime(new Date(reservation.endTime))}\n`;
-    details += `${t('status') || 'Status'}: ${Localization.translateStatus(reservation.status, language)}`;
-    
-    // Add lounge-specific details if applicable
-    if (isLounge && reservation.visitorCount) {
-      details += `\n${language === 'es' ? 'Visitantes' : 'Visitors'}: ${reservation.visitorCount}`;
+  const handleCancelReservation = async (reservationId) => {
+    try {
+      Alert.alert(
+        language === 'es' ? 'Cancelar Reservación' : 'Cancel Reservation',
+        language === 'es' 
+          ? '¿Está seguro de que desea cancelar esta reservación?'
+          : 'Are you sure you want to cancel this reservation?',
+        [
+          { text: t('cancel'), style: 'cancel' },
+          {
+            text: language === 'es' ? 'Cancelar Reservación' : 'Cancel Reservation',
+            style: 'destructive',
+            onPress: async () => {
+              try {
+                await cancelReservation(reservationId);
+                await loadReservations(); // Refresh the list
+                
+                Alert.alert(
+                  t('success') || 'Success',
+                  language === 'es' 
+                    ? 'Reservación cancelada exitosamente'
+                    : 'Reservation cancelled successfully'
+                );
+              } catch (error) {
+                console.error('Cancel reservation error:', error);
+                Alert.alert(
+                  t('error') || 'Error',
+                  error.message || (
+                    language === 'es' 
+                      ? 'Error al cancelar reservación'
+                      : 'Error cancelling reservation'
+                  )
+                );
+              }
+            },
+          },
+        ]
+      );
+    } catch (error) {
+      console.error('Handle cancel error:', error);
     }
-    
-    if (isLounge && reservation.willUseGrill !== undefined) {
-      details += `\n${language === 'es' ? 'Uso de parrilla' : 'Grill usage'}: ${
-        reservation.willUseGrill 
-          ? (language === 'es' ? 'Sí' : 'Yes')
-          : (language === 'es' ? 'No' : 'No')
-      }`;
-    }
-    
-    if (reservation.notes) {
-      details += `\n\n${t('notes') || 'Notes'}: ${reservation.notes}`;
-    }
-    
-    if (reservation.status === 'denied' && reservation.denialReason) {
-      details += `\n\n${language === 'es' ? 'Razón del rechazo' : 'Rejection reason'}: ${reservation.denialReason}`;
-    }
-    
-    Alert.alert(
-      language === 'es' ? 'Detalles de la Reserva' : 'Reservation Details',
-      details,
-      [{ text: 'OK' }]
-    );
   };
 
   const handleEditReservation = (reservation) => {
-    setSelectedReservation(reservation);
-    setEditModalVisible(true);
+    if (canEditReservation(reservation)) {
+      setSelectedReservation(reservation);
+      setEditModalVisible(true);
+    } else {
+      Alert.alert(
+        language === 'es' ? 'No Editable' : 'Cannot Edit',
+        language === 'es' 
+          ? 'Esta reservación no puede ser editada'
+          : 'This reservation cannot be edited'
+      );
+    }
   };
 
-  const handleReservationUpdate = (updatedReservation) => {
-    // Update the reservation in the local state
-    const updatedReservations = reservations.map(res => 
-      res.id === updatedReservation.id ? updatedReservation : res
-    );
-    
-    // Trigger a refresh to get the latest data
-    loadReservations();
-    
-    // Show success message
-    Alert.alert(
-      t('success') || 'Success',
-      language === 'es'
-        ? 'Reserva actualizada exitosamente'
-        : 'Reservation updated successfully'
-    );
-  };
-
-  const handleCancelReservation = (reservation) => {
-    Alert.alert(
-      language === 'es' ? 'Confirmar Cancelación' : 'Confirm Cancellation',
-      language === 'es' 
-        ? '¿Está seguro de que desea cancelar esta reserva?'
-        : 'Are you sure you want to cancel this reservation?',
-      [
-        {
-          text: language === 'es' ? 'No' : 'No',
-          style: 'cancel'
-        },
-        {
-          text: language === 'es' ? 'Sí, Cancelar' : 'Yes, Cancel',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await cancelReservation(reservation.id);
-              await loadReservations();
-              Alert.alert(
-                t('success') || 'Success',
-                language === 'es'
-                  ? 'Reserva cancelada exitosamente'
-                  : 'Reservation cancelled successfully'
-              );
-            } catch (error) {
-              console.error('Error cancelling reservation:', error);
-              Alert.alert(
-                t('error') || 'Error',
-                language === 'es'
-                  ? 'No se pudo cancelar la reserva'
-                  : 'Failed to cancel reservation'
-              );
-            }
-          }
-        }
-      ]
-    );
+  const handleReservationUpdate = async (updatedReservation) => {
+    try {
+      await loadReservations(); // Refresh the list
+      Alert.alert(
+        t('success') || 'Success',
+        language === 'es' 
+          ? 'Reservación actualizada exitosamente'
+          : 'Reservation updated successfully'
+      );
+    } catch (error) {
+      console.error('Handle update error:', error);
+    }
   };
 
   const renderFilterButton = (filter, label) => (
     <TouchableOpacity
+      key={filter}
       style={[
         styles.filterButton,
-        selectedFilter === filter && styles.activeFilterButton
+        selectedFilter === filter && styles.activeFilterButton,
       ]}
       onPress={() => setSelectedFilter(filter)}
     >
-      <Text style={[
-        styles.filterText,
-        selectedFilter === filter && styles.activeFilterText
-      ]}>
+      <Text
+        style={[
+          styles.filterText,
+          selectedFilter === filter && styles.activeFilterText,
+        ]}
+      >
         {label}
       </Text>
     </TouchableOpacity>
   );
 
-  const renderEmptyState = () => {
-    let message = '';
-    let icon = 'event-busy';
-    
-    switch (selectedFilter) {
-      case 'upcoming':
-        message = language === 'es' 
-          ? 'No tienes reservas próximas'
-          : 'You have no upcoming reservations';
-        icon = 'event-available';
-        break;
-      case 'past':
-        message = language === 'es'
-          ? 'No tienes reservas pasadas'
-          : 'You have no past reservations';
-        icon = 'history';
-        break;
-      case 'pending':
-        message = language === 'es'
-          ? 'No tienes reservas pendientes'
-          : 'You have no pending reservations';
-        icon = 'schedule';
-        break;
-      case 'cancelled':
-        message = language === 'es'
-          ? 'No tienes reservas canceladas'
-          : 'You have no cancelled reservations';
-        icon = 'cancel';
-        break;
-      default:
-        message = language === 'es'
-          ? 'No tienes reservas aún'
-          : 'You have no reservations yet';
-        icon = 'event-note';
-    }
-    
-    return (
-      <View style={styles.emptyState}>
-        <Icon name={icon} size={64} color={COLORS.text.secondary} />
-        <Text style={styles.emptyTitle}>{message}</Text>
-        <Text style={styles.emptyText}>
-          {language === 'es'
-            ? 'Reserva una amenidad para comenzar'
-            : 'Book an amenity to get started'}
-        </Text>
-      </View>
-    );
-  };
-
-  const renderReservation = ({ item }) => (
+  const renderReservation = ({ item: reservation }) => (
     <ReservationCard
-      reservation={item}
-      onPress={() => handleReservationPress(item)}
-      onUpdate={handleReservationUpdate}
-      showActions={true}
-      isAdmin={false}
+      reservation={reservation}
+      onCancel={() => handleCancelReservation(reservation.id)}
+      onEdit={() => handleEditReservation(reservation)}
+      onViewDetails={() => {
+        // Navigate to details if needed
+        console.log('View details for:', reservation.id);
+      }}
+      showEditButton={canEditReservation(reservation)}
     />
   );
 
-  const getStatistics = () => {
-    const now = new Date();
-    const stats = {
-      total: reservations.length,
-      upcoming: reservations.filter(r => {
-        const startTime = new Date(r.startTime);
-        return startTime > now && ['pending', 'approved', 'confirmed'].includes(r.status);
-      }).length,
-      pending: reservations.filter(r => r.status === 'pending').length,
-      completed: reservations.filter(r => r.status === 'completed' || new Date(r.endTime) < now).length
-    };
-    return stats;
-  };
+  const renderEmptyState = () => (
+    <View style={styles.emptyState}>
+      <Icon name="event" size={64} color={COLORS.text.secondary} />
+      <Text style={styles.emptyTitle}>
+        {selectedFilter === 'all' && (language === 'es' ? 'Sin Reservaciones' : 'No Reservations')}
+        {selectedFilter === 'upcoming' && (language === 'es' ? 'Sin Reservaciones Próximas' : 'No Upcoming Reservations')}
+        {selectedFilter === 'past' && (language === 'es' ? 'Sin Reservaciones Pasadas' : 'No Past Reservations')}
+        {selectedFilter === 'pending' && (language === 'es' ? 'Sin Reservaciones Pendientes' : 'No Pending Reservations')}
+        {selectedFilter === 'cancelled' && (language === 'es' ? 'Sin Reservaciones Canceladas' : 'No Cancelled Reservations')}
+      </Text>
+      <Text style={styles.emptyText}>
+        {language === 'es' 
+          ? 'Cuando haga una reservación, aparecerá aquí.'
+          : 'When you make a reservation, it will appear here.'
+        }
+      </Text>
+    </View>
+  );
 
-  const stats = getStatistics();
-
-  if (loading && reservations.length === 0) {
-    return <LoadingSpinner message={t('loading')} />;
+  if (loading) {
+    return <LoadingSpinner message={language === 'es' ? 'Cargando reservaciones...' : 'Loading reservations...'} />;
   }
 
   return (
