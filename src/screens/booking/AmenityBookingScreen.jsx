@@ -10,7 +10,7 @@ import {
   Alert,
   Switch,
 } from 'react-native';
-import Icon from 'react-native-vector-icons/MaterialIcons';
+import Icon from '@react-native-vector-icons/material-icons';
 import DatePicker from 'react-native-date-picker';
 import { Card } from '../../components/common/Card';
 import { Button } from '../../components/common/Button';

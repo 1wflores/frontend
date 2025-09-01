@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { View, Text, StyleSheet, Alert, TouchableOpacity } from 'react-native';
-import Icon from 'react-native-vector-icons/MaterialIcons';
+import Icon from '@react-native-vector-icons/material-icons';
 import { useLanguage } from '../../contexts/LanguageContext';
 import { useReservations } from '../../hooks/useReservations';
 import { DateUtils } from '../../utils/dateUtils';

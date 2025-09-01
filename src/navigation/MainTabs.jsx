@@ -1,7 +1,7 @@
 // MainTabs.jsx - Fixed with dynamic translations
 import React from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import Icon from 'react-native-vector-icons/MaterialIcons';
+import Icon from '@react-native-vector-icons/material-icons';
 import { useAuth } from '../hooks/useAuth';
 import { useLanguage } from '../contexts/LanguageContext'; // ✅ ADDED: Language support
 import { COLORS } from '../utils/constants';

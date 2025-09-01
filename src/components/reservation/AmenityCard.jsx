@@ -5,7 +5,7 @@ import {
   StyleSheet,
   TouchableOpacity,
 } from 'react-native';
-import Icon from 'react-native-vector-icons/MaterialIcons';
+import Icon from '@react-native-vector-icons/material-icons';
 import { Card } from '../common/Card';
 import { useLanguage } from '../../contexts/LanguageContext'; // ✅ NEW: Import language hook
 import { Localization } from '../../utils/localization'; // ✅ NEW: Import localization

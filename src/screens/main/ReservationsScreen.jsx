@@ -11,7 +11,7 @@ import {
   Alert,
   ScrollView, // ✅ FIXED: Added missing ScrollView import
 } from 'react-native';
-import Icon from 'react-native-vector-icons/MaterialIcons';
+import Icon from '@react-native-vector-icons/material-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { Card } from '../../components/common/Card';
 import { LoadingSpinner } from '../../components/common/LoadingSpinner';
