@@ -1,4 +1,4 @@
-// src/components/reservation/EditReservationModal.jsx - COMPLETE FINAL VERSION
+// src/components/reservation/EditReservationModal.jsx - UPDATED WITH LOUNGE SUPPORT
 
 import React, { useState, useEffect } from 'react';
 import {
@@ -49,6 +49,11 @@ const EditReservationModal = ({
   const [willUseGrill, setWillUseGrill] = useState(false);
   const [isLounge, setIsLounge] = useState(false);
   
+  // NEW: Duration for lounge editing
+  const [selectedDuration, setSelectedDuration] = useState(60);
+  const [availableDurations, setAvailableDurations] = useState([]);
+  const [originalDuration, setOriginalDuration] = useState(60);
+  
   // Initialize state when reservation changes
   useEffect(() => {
     if (reservation && visible) {
@@ -56,18 +61,28 @@ const EditReservationModal = ({
     }
   }, [reservation, visible]);
   
-  // Load available slots when date changes
+  // Load available slots when date or duration changes
   useEffect(() => {
-    if (amenity && selectedDate) {
+    if (amenity && selectedDate && visible) {
       loadAvailableSlots();
     }
-  }, [selectedDate, amenity]);
+  }, [selectedDate, amenity, selectedDuration, visible]);
   
   const initializeEditForm = async () => {
     try {
+      setLoading(true);
+      
       // Set initial date and time from reservation
       const startTime = new Date(reservation.startTime);
+      const endTime = new Date(reservation.endTime);
       setSelectedDate(startTime);
+      
+      // Calculate original duration
+      const durationMs = endTime.getTime() - startTime.getTime();
+      const durationMinutes = Math.round(durationMs / (1000 * 60));
+      setOriginalDuration(durationMinutes);
+      setSelectedDuration(durationMinutes);
+      
       setSelectedSlot({
         startTime: reservation.startTime,
         endTime: reservation.endTime,
@@ -84,19 +99,37 @@ const EditReservationModal = ({
                          amenityData?.name?.toLowerCase().includes('lounge');
       setIsLounge(loungeCheck);
       
-      // Initialize lounge-specific fields
+      // NEW: Set up durations for lounge
       if (loungeCheck) {
+        const maxDuration = amenityData.maxDuration || 240;
+        const durations = [];
+        
+        for (let i = 60; i <= maxDuration; i += 30) {
+          const hours = Math.floor(i / 60);
+          const minutes = i % 60;
+          const label = minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`;
+          durations.push({ value: i, label });
+        }
+        
+        setAvailableDurations(durations);
+        
+        // Initialize lounge-specific fields
         setVisitorCount(reservation.visitorCount?.toString() || '1');
         setWillUseGrill(reservation.willUseGrill || false);
+      } else {
+        setAvailableDurations([{ value: 60, label: '1h' }]);
       }
+      
     } catch (error) {
       console.error('Error initializing edit form:', error);
       Alert.alert(
         t('error') || 'Error',
         language === 'es' 
-          ? 'Error al cargar los detalles de la reserva' 
-          : 'Failed to load reservation details'
+          ? 'Error al cargar datos de la reserva'
+          : 'Error loading reservation data'
       );
+    } finally {
+      setLoading(false);
     }
   };
   
@@ -105,223 +138,152 @@ const EditReservationModal = ({
     
     try {
       setLoadingSlots(true);
+      console.log('Loading available slots for edit...', {
+        amenityId: reservation.amenityId,
+        date: selectedDate,
+        duration: selectedDuration
+      });
       
-      const dateStr = DateUtils.formatDate(selectedDate, 'YYYY-MM-DD');
+      const formattedDate = DateUtils.formatDate(selectedDate, 'YYYY-MM-DD');
+      
+      // Get available slots with the selected duration
       const slots = await reservationService.getAvailableSlots(
-        amenity.id,
-        dateStr,
-        amenity.defaultDuration || 60
+        reservation.amenityId, 
+        formattedDate, 
+        selectedDuration
       );
       
-      // Add the current reservation's slot back as available
-      const currentSlot = {
-        startTime: reservation.startTime,
-        endTime: reservation.endTime,
-        label: `${DateUtils.formatTime(new Date(reservation.startTime))} - ${DateUtils.formatTime(new Date(reservation.endTime))}`
-      };
+      // Add current reservation slot if it's not already included
+      const currentSlotExists = slots.some(slot => 
+        new Date(slot.startTime).getTime() === new Date(reservation.startTime).getTime()
+      );
       
-      // Check if current slot is on the same day
-      const currentDate = DateUtils.formatDate(new Date(reservation.startTime), 'YYYY-MM-DD');
-      if (currentDate === dateStr) {
-        // Find and mark the current slot
-        const updatedSlots = slots.map(slot => ({
-          ...slot,
-          isCurrent: slot.startTime === reservation.startTime
-        }));
-        
-        // If current slot not in list, add it
-        const hasCurrentSlot = updatedSlots.some(s => s.isCurrent);
-        if (!hasCurrentSlot) {
-          updatedSlots.push({ ...currentSlot, isCurrent: true });
-        }
-        
-        // Sort by start time
-        updatedSlots.sort((a, b) => 
-          new Date(a.startTime) - new Date(b.startTime)
-        );
-        
-        setAvailableSlots(updatedSlots);
-      } else {
-        setAvailableSlots(slots);
+      if (!currentSlotExists) {
+        const currentSlot = {
+          startTime: reservation.startTime,
+          endTime: reservation.endTime,
+          available: true,
+          isCurrent: true
+        };
+        slots.push(currentSlot);
       }
+      
+      // Sort slots by start time
+      slots.sort((a, b) => new Date(a.startTime) - new Date(b.startTime));
+      
+      setAvailableSlots(slots);
     } catch (error) {
-      console.error('Error loading available slots:', error);
+      console.error('Error loading slots for edit:', error);
       setAvailableSlots([]);
     } finally {
       setLoadingSlots(false);
     }
   };
-  
-  const validateVisitorCount = () => {
-    const count = parseInt(visitorCount);
-    const maxVisitors = amenity?.maxCapacity || 20;
-    
-    if (isNaN(count) || count < 1) {
-      Alert.alert(
-        t('error') || 'Error',
-        language === 'es' 
-          ? 'El número de visitantes debe ser al menos 1' 
-          : 'Number of visitors must be at least 1'
-      );
-      return false;
-    }
-    
-    if (count > maxVisitors) {
-      Alert.alert(
-        t('error') || 'Error',
-        language === 'es' 
-          ? `Máximo ${maxVisitors} visitantes permitidos` 
-          : `Maximum ${maxVisitors} visitors allowed`
-      );
-      return false;
-    }
-    
-    return true;
+
+  const handleDateChange = (date) => {
+    setSelectedDate(date);
+    setSelectedSlot(null);
+    setShowDatePicker(false);
   };
-  
-  const handleUpdateReservation = async () => {
-    // Validation
-    if (!selectedSlot) {
-      Alert.alert(
-        t('error') || 'Error',
-        language === 'es' 
-          ? 'Por favor selecciona un horario' 
-          : 'Please select a time slot'
-      );
-      return;
-    }
-    
-    // Validate visitor count for lounge
-    if (isLounge && !validateVisitorCount()) {
-      return;
-    }
-    
-    // Check if anything changed
-    const hasChanges = 
-      selectedSlot.startTime !== reservation.startTime ||
-      selectedSlot.endTime !== reservation.endTime ||
-      notes !== (reservation.notes || reservation.specialRequests || '') ||
-      (isLounge && (
-        parseInt(visitorCount) !== (reservation.visitorCount || 1) ||
-        willUseGrill !== (reservation.willUseGrill || false)
-      ));
-    
-    if (!hasChanges) {
-      Alert.alert(
-        t('info') || 'Info',
-        language === 'es' 
-          ? 'No se han realizado cambios' 
-          : 'No changes have been made'
-      );
-      return;
-    }
-    
-    // Confirm update
-    Alert.alert(
-      language === 'es' ? 'Confirmar Cambios' : 'Confirm Changes',
-      language === 'es' 
-        ? '¿Estás seguro de que deseas actualizar esta reserva?' 
-        : 'Are you sure you want to update this reservation?',
-      [
-        {
-          text: language === 'es' ? 'Cancelar' : 'Cancel',
-          style: 'cancel'
-        },
-        {
-          text: language === 'es' ? 'Actualizar' : 'Update',
-          onPress: performUpdate
-        }
-      ]
-    );
+
+  const handleSlotSelection = (slot) => {
+    setSelectedSlot(slot);
   };
-  
-  const performUpdate = async () => {
+
+  // NEW: Handle duration change
+  const handleDurationChange = (duration) => {
+    setSelectedDuration(duration);
+    setSelectedSlot(null); // Clear slot when duration changes
+  };
+
+  const handleSave = async () => {
     try {
       setLoading(true);
       
+      // Validate required fields
+      if (!selectedSlot) {
+        Alert.alert(
+          t('error') || 'Error',
+          language === 'es' ? 'Seleccione un horario' : 'Please select a time slot'
+        );
+        return;
+      }
+
+      // Validate lounge-specific fields
+      if (isLounge) {
+        const visitorNum = parseInt(visitorCount);
+        const maxCapacity = amenity?.capacity || 20;
+        
+        if (visitorNum < 1 || visitorNum > maxCapacity) {
+          Alert.alert(
+            t('error') || 'Error',
+            language === 'es' 
+              ? `Número de visitantes debe estar entre 1 y ${maxCapacity}`
+              : `Number of visitors must be between 1 and ${maxCapacity}`
+          );
+          return;
+        }
+      }
+
+      // Prepare update data
       const updateData = {
         startTime: selectedSlot.startTime,
         endTime: selectedSlot.endTime,
         notes: notes.trim(),
-        specialRequests: notes.trim(),
-        // Keep the same amenity
-        amenityId: reservation.amenityId,
       };
-      
-      // Add lounge-specific data
+
+      // Add lounge-specific fields
       if (isLounge) {
-        updateData.visitorCount = parseInt(visitorCount);
+        updateData.visitorCount = parseInt(visitorCount) || 1;
         updateData.willUseGrill = willUseGrill;
       }
-      
-      // Call the update API
+
+      console.log('Updating reservation with data:', updateData);
+
+      // Call update service
       const updatedReservation = await reservationService.updateReservation(
-        reservation.id,
+        reservation.id, 
         updateData
       );
-      
+
+      console.log('Reservation updated successfully:', updatedReservation);
+
+      // Call parent callback
+      if (onUpdate) {
+        onUpdate(updatedReservation);
+      }
+
+      // Show success message
       Alert.alert(
         t('success') || 'Success',
-        language === 'es'
-          ? 'Reserva actualizada exitosamente. El horario anterior está ahora disponible para otros usuarios.'
-          : 'Reservation updated successfully. The previous time slot is now available for other users.',
-        [
-          {
-            text: 'OK',
-            onPress: () => {
-              onUpdate(updatedReservation);
-              onClose();
-            }
-          }
-        ]
+        language === 'es' 
+          ? 'Reserva actualizada exitosamente'
+          : 'Reservation updated successfully'
       );
+
+      onClose();
+
     } catch (error) {
       console.error('Error updating reservation:', error);
       Alert.alert(
         t('error') || 'Error',
-        language === 'es'
-          ? 'Error al actualizar la reserva. Por favor intenta de nuevo.'
-          : 'Failed to update reservation. Please try again.'
+        error.message || (language === 'es' 
+          ? 'Error al actualizar la reserva'
+          : 'Error updating reservation')
       );
     } finally {
       setLoading(false);
     }
   };
-  
-  const getMinDate = () => {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    return today;
-  };
-  
-  const getMaxDate = () => {
-    const maxDate = new Date();
-    maxDate.setMonth(maxDate.getMonth() + 3); // 3 months ahead
-    return maxDate;
-  };
-  
-  const incrementVisitors = () => {
-    const current = parseInt(visitorCount) || 0;
-    const max = amenity?.maxCapacity || 20;
-    if (current < max) {
-      setVisitorCount((current + 1).toString());
-    }
-  };
-  
-  const decrementVisitors = () => {
-    const current = parseInt(visitorCount) || 1;
-    if (current > 1) {
-      setVisitorCount((current - 1).toString());
-    }
-  };
-  
-  if (!reservation || !visible) return null;
-  
+
+  if (!visible || !reservation) {
+    return null;
+  }
+
   return (
     <Modal
       visible={visible}
       animationType="slide"
-      transparent={false}
       onRequestClose={onClose}
     >
       <View style={styles.container}>
@@ -330,325 +292,225 @@ const EditReservationModal = ({
           <TouchableOpacity onPress={onClose} style={styles.closeButton}>
             <Icon name="close" size={24} color={COLORS.text.primary} />
           </TouchableOpacity>
-          <Text style={styles.title}>
+          <Text style={styles.headerTitle}>
             {language === 'es' ? 'Editar Reserva' : 'Edit Reservation'}
           </Text>
           <View style={styles.placeholder} />
         </View>
-        
-        <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-          {/* Amenity Info (Read-only) */}
-          <Card style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <Icon name="info" size={20} color={COLORS.primary} />
+
+        {loading ? (
+          <View style={styles.loadingContainer}>
+            <LoadingSpinner size="large" />
+            <Text style={styles.loadingText}>
+              {language === 'es' ? 'Cargando...' : 'Loading...'}
+            </Text>
+          </View>
+        ) : (
+          <ScrollView style={styles.content}>
+            {/* Amenity Info */}
+            <Card style={styles.section}>
               <Text style={styles.sectionTitle}>
                 {language === 'es' ? 'Amenidad' : 'Amenity'}
               </Text>
-            </View>
-            <Text style={styles.amenityName}>
-              {Localization.translateAmenity(
-                reservation.amenityName || amenity?.name, 
-                language
-              )}
-            </Text>
-            <Text style={styles.amenityNote}>
-              {language === 'es' 
-                ? 'La amenidad no se puede cambiar. Para reservar una amenidad diferente, cancela esta reserva y crea una nueva.'
-                : 'The amenity cannot be changed. To book a different amenity, cancel this reservation and create a new one.'}
-            </Text>
-          </Card>
-          
-          {/* Date Selection */}
-          <Card style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <Icon name="event" size={20} color={COLORS.primary} />
-              <Text style={styles.sectionTitle}>
-                {language === 'es' ? 'Fecha' : 'Date'}
-              </Text>
-            </View>
-            
-            <TouchableOpacity
-              style={styles.dateButton}
-              onPress={() => setShowDatePicker(true)}
-            >
-              <Icon name="calendar-today" size={20} color={COLORS.primary} />
-              <Text style={styles.dateButtonText}>
-                {DateUtils.formatDate(selectedDate, language)}
-              </Text>
-              <Icon name="chevron-right" size={20} color={COLORS.text.secondary} />
-            </TouchableOpacity>
-            
-            {/* Show warning if changing date */}
-            {DateUtils.formatDate(selectedDate, 'YYYY-MM-DD') !== 
-             DateUtils.formatDate(new Date(reservation.startTime), 'YYYY-MM-DD') && (
-              <View style={styles.warning}>
-                <Icon name="info" size={16} color={COLORS.warning} />
-                <Text style={styles.warningText}>
-                  {language === 'es'
-                    ? 'Estás cambiando la fecha de tu reserva'
-                    : 'You are changing your reservation date'}
-                </Text>
-              </View>
-            )}
-          </Card>
-          
-          {/* Time Slot Selection */}
-          <Card style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <Icon name="schedule" size={20} color={COLORS.primary} />
-              <Text style={styles.sectionTitle}>
-                {language === 'es' ? 'Horario' : 'Time Slot'}
-              </Text>
-            </View>
-            
-            {loadingSlots ? (
-              <LoadingSpinner size="small" />
-            ) : availableSlots.length > 0 ? (
-              <View style={styles.slotsContainer}>
-                {availableSlots.map((slot, index) => (
-                  <TouchableOpacity
-                    key={index}
-                    style={[
-                      styles.slotButton,
-                      selectedSlot?.startTime === slot.startTime && styles.selectedSlot,
-                      slot.isCurrent && styles.currentSlot
-                    ]}
-                    onPress={() => setSelectedSlot(slot)}
-                  >
-                    <Text style={[
-                      styles.slotTime,
-                      selectedSlot?.startTime === slot.startTime && styles.selectedSlotText
-                    ]}>
-                      {slot.label}
-                    </Text>
-                    {slot.isCurrent && (
-                      <Text style={styles.currentSlotLabel}>
-                        {language === 'es' ? 'Actual' : 'Current'}
+              <Text style={styles.amenityName}>{amenity?.name}</Text>
+            </Card>
+
+            {/* NEW: Duration Selection for Lounge */}
+            {isLounge && (
+              <Card style={styles.section}>
+                <View style={styles.sectionHeader}>
+                  <Icon name="timer" size={20} color={COLORS.primary} />
+                  <Text style={styles.sectionTitle}>
+                    {language === 'es' ? 'Duración' : 'Duration'}
+                  </Text>
+                </View>
+                <View style={styles.durationContainer}>
+                  {availableDurations.map((duration) => (
+                    <TouchableOpacity
+                      key={duration.value}
+                      style={[
+                        styles.durationButton,
+                        selectedDuration === duration.value && styles.selectedDuration
+                      ]}
+                      onPress={() => handleDurationChange(duration.value)}
+                    >
+                      <Text style={[
+                        styles.durationText,
+                        selectedDuration === duration.value && styles.selectedDurationText
+                      ]}>
+                        {duration.label}
                       </Text>
-                    )}
-                  </TouchableOpacity>
-                ))}
-              </View>
-            ) : (
-              <Text style={styles.noSlotsText}>
-                {language === 'es' 
-                  ? 'No hay horarios disponibles para esta fecha'
-                  : 'No time slots available for this date'}
-              </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </Card>
             )}
-          </Card>
-          
-          {/* Lounge-specific: Visitor Count */}
-          {isLounge && (
+
+            {/* Date Selection */}
             <Card style={styles.section}>
               <View style={styles.sectionHeader}>
-                <Icon name="group" size={20} color={COLORS.primary} />
+                <Icon name="calendar-today" size={20} color={COLORS.primary} />
                 <Text style={styles.sectionTitle}>
-                  {language === 'es' ? 'Número de Visitantes' : 'Number of Visitors'}
+                  {language === 'es' ? 'Fecha' : 'Date'}
+                </Text>
+              </View>
+              <TouchableOpacity
+                style={styles.dateButton}
+                onPress={() => setShowDatePicker(true)}
+              >
+                <Text style={styles.dateButtonText}>
+                  {DateUtils.formatDate(selectedDate, language === 'es' ? 'DD/MM/YYYY' : 'MM/DD/YYYY')}
+                </Text>
+                <Icon name="calendar-today" size={20} color={COLORS.text.secondary} />
+              </TouchableOpacity>
+            </Card>
+
+            {/* Time Slots */}
+            <Card style={styles.section}>
+              <View style={styles.sectionHeader}>
+                <Icon name="schedule" size={20} color={COLORS.primary} />
+                <Text style={styles.sectionTitle}>
+                  {language === 'es' ? 'Horario' : 'Time Slot'}
                 </Text>
               </View>
               
-              <View style={styles.visitorContainer}>
-                <TouchableOpacity 
-                  style={styles.counterButton}
-                  onPress={decrementVisitors}
-                >
-                  <Icon name="remove" size={24} color={COLORS.primary} />
-                </TouchableOpacity>
-                
+              {loadingSlots ? (
+                <LoadingSpinner size="small" />
+              ) : availableSlots.length > 0 ? (
+                <View style={styles.slotsContainer}>
+                  {availableSlots.map((slot, index) => (
+                    <TouchableOpacity
+                      key={index}
+                      style={[
+                        styles.slotButton,
+                        selectedSlot?.startTime === slot.startTime && styles.selectedSlot,
+                        slot.isCurrent && styles.currentSlot
+                      ]}
+                      onPress={() => setSelectedSlot(slot)}
+                    >
+                      <Text style={[
+                        styles.slotTime,
+                        selectedSlot?.startTime === slot.startTime && styles.selectedSlotText
+                      ]}>
+                        {isLounge ? (
+                          `${DateUtils.formatTime(new Date(slot.startTime))} - ${DateUtils.formatTime(new Date(slot.endTime))}`
+                        ) : (
+                          DateUtils.formatTime(new Date(slot.startTime))
+                        )}
+                      </Text>
+                      {slot.isCurrent && (
+                        <Text style={styles.currentSlotLabel}>
+                          {language === 'es' ? 'Actual' : 'Current'}
+                        </Text>
+                      )}
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              ) : (
+                <Text style={styles.noSlotsText}>
+                  {language === 'es' 
+                    ? 'No hay horarios disponibles para esta fecha'
+                    : 'No time slots available for this date'}
+                </Text>
+              )}
+            </Card>
+
+            {/* Lounge-specific: Visitor Count */}
+            {isLounge && (
+              <Card style={styles.section}>
+                <View style={styles.sectionHeader}>
+                  <Icon name="group" size={20} color={COLORS.primary} />
+                  <Text style={styles.sectionTitle}>
+                    {language === 'es' ? 'Número de Visitantes' : 'Number of Visitors'}
+                  </Text>
+                </View>
                 <Input
                   value={visitorCount}
                   onChangeText={setVisitorCount}
+                  placeholder="1"
                   keyboardType="numeric"
-                  style={styles.visitorInput}
-                  textAlign="center"
                   maxLength={2}
                 />
-                
-                <TouchableOpacity 
-                  style={styles.counterButton}
-                  onPress={incrementVisitors}
-                >
-                  <Icon name="add" size={24} color={COLORS.primary} />
-                </TouchableOpacity>
-              </View>
-              
-              <Text style={styles.visitorNote}>
-                {language === 'es'
-                  ? `Máximo ${amenity?.maxCapacity || 20} visitantes. Incluye a ti mismo en el conteo.`
-                  : `Maximum ${amenity?.maxCapacity || 20} visitors. Include yourself in the count.`}
-              </Text>
-            </Card>
-          )}
-          
-          {/* Lounge-specific: Grill Usage */}
-          {isLounge && (
+                <Text style={styles.fieldNote}>
+                  {language === 'es' 
+                    ? `Máximo ${amenity?.capacity || 20} personas`
+                    : `Maximum ${amenity?.capacity || 20} people`}
+                </Text>
+              </Card>
+            )}
+
+            {/* Lounge-specific: Grill Usage */}
+            {isLounge && (
+              <Card style={styles.section}>
+                <View style={styles.switchRow}>
+                  <View style={styles.switchLabel}>
+                    <Icon name="outdoor-grill" size={20} color={COLORS.primary} />
+                    <View style={styles.switchTextContainer}>
+                      <Text style={styles.sectionTitle}>
+                        {language === 'es' ? 'Uso de Parrilla' : 'Grill Usage'}
+                      </Text>
+                      <Text style={styles.fieldNote}>
+                        {language === 'es' 
+                          ? 'Se aplican cargos adicionales'
+                          : 'Additional fees apply'}
+                      </Text>
+                    </View>
+                  </View>
+                  <Switch
+                    value={willUseGrill}
+                    onValueChange={setWillUseGrill}
+                    trackColor={{ false: COLORS.background.secondary, true: COLORS.primary }}
+                    thumbColor={willUseGrill ? COLORS.white : COLORS.text.secondary}
+                  />
+                </View>
+              </Card>
+            )}
+
+            {/* Notes */}
             <Card style={styles.section}>
               <View style={styles.sectionHeader}>
-                <Icon name="outdoor-grill" size={20} color={COLORS.primary} />
+                <Icon name="notes" size={20} color={COLORS.primary} />
                 <Text style={styles.sectionTitle}>
-                  {language === 'es' ? 'Uso de Parrilla' : 'Grill Usage'}
+                  {language === 'es' ? 'Notas' : 'Notes'}
                 </Text>
               </View>
-              
-              <View style={styles.grillContainer}>
-                <Text style={styles.grillLabel}>
-                  {language === 'es' 
-                    ? '¿Usarás la parrilla?' 
-                    : 'Will you use the grill?'}
-                </Text>
-                <Switch
-                  value={willUseGrill}
-                  onValueChange={setWillUseGrill}
-                  trackColor={{ false: COLORS.border.light, true: COLORS.primary }}
-                  thumbColor={willUseGrill ? COLORS.white : '#f4f3f4'}
-                />
-              </View>
-              
-              {willUseGrill && (
-                <View style={styles.grillWarning}>
-                  <Icon name="info" size={16} color={COLORS.warning} />
-                  <Text style={styles.grillWarningText}>
-                    {language === 'es'
-                      ? 'Se puede requerir un depósito adicional para el uso de la parrilla.'
-                      : 'Additional deposit may be required for grill usage.'}
-                  </Text>
-                </View>
-              )}
+              <Input
+                value={notes}
+                onChangeText={setNotes}
+                placeholder={language === 'es' ? 'Notas adicionales...' : 'Additional notes...'}
+                multiline
+                numberOfLines={3}
+                style={styles.notesInput}
+              />
             </Card>
-          )}
-          
-          {/* Notes/Comments */}
-          <Card style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <Icon name="note" size={20} color={COLORS.primary} />
-              <Text style={styles.sectionTitle}>
-                {language === 'es' ? 'Notas o Comentarios' : 'Notes or Comments'}
-              </Text>
-            </View>
-            
-            <Input
-              placeholder={language === 'es' 
-                ? 'Agrega cualquier nota o solicitud especial...'
-                : 'Add any notes or special requests...'}
-              value={notes}
-              onChangeText={setNotes}
-              multiline
-              numberOfLines={4}
-              maxLength={500}
-              style={styles.notesInput}
-            />
-            
-            <Text style={styles.charCount}>
-              {notes.length}/500
-            </Text>
-          </Card>
-          
-          {/* Summary of Changes */}
-          {(selectedSlot?.startTime !== reservation.startTime ||
-            notes !== (reservation.notes || '') ||
-            (isLounge && (
-              parseInt(visitorCount) !== (reservation.visitorCount || 1) ||
-              willUseGrill !== (reservation.willUseGrill || false)
-            ))) && (
-            <Card style={[styles.section, styles.changesSection]}>
-              <View style={styles.sectionHeader}>
-                <Icon name="track-changes" size={20} color={COLORS.warning} />
-                <Text style={styles.sectionTitle}>
-                  {language === 'es' ? 'Resumen de Cambios' : 'Summary of Changes'}
-                </Text>
-              </View>
-              
-              {selectedSlot?.startTime !== reservation.startTime && (
-                <View style={styles.changeItem}>
-                  <Text style={styles.changeLabel}>
-                    {language === 'es' ? 'Horario:' : 'Time:'}
-                  </Text>
-                  <Text style={styles.changeOld}>
-                    {DateUtils.formatTime(new Date(reservation.startTime))} - 
-                    {DateUtils.formatTime(new Date(reservation.endTime))}
-                  </Text>
-                  <Icon name="arrow-forward" size={16} color={COLORS.text.secondary} />
-                  <Text style={styles.changeNew}>
-                    {selectedSlot.label}
-                  </Text>
-                </View>
-              )}
-              
-              {isLounge && parseInt(visitorCount) !== (reservation.visitorCount || 1) && (
-                <View style={styles.changeItem}>
-                  <Text style={styles.changeLabel}>
-                    {language === 'es' ? 'Visitantes:' : 'Visitors:'}
-                  </Text>
-                  <Text style={styles.changeOld}>
-                    {reservation.visitorCount || 1}
-                  </Text>
-                  <Icon name="arrow-forward" size={16} color={COLORS.text.secondary} />
-                  <Text style={styles.changeNew}>
-                    {visitorCount}
-                  </Text>
-                </View>
-              )}
-              
-              {isLounge && willUseGrill !== (reservation.willUseGrill || false) && (
-                <View style={styles.changeItem}>
-                  <Text style={styles.changeLabel}>
-                    {language === 'es' ? 'Parrilla:' : 'Grill:'}
-                  </Text>
-                  <Text style={styles.changeOld}>
-                    {reservation.willUseGrill 
-                      ? (language === 'es' ? 'Sí' : 'Yes')
-                      : (language === 'es' ? 'No' : 'No')}
-                  </Text>
-                  <Icon name="arrow-forward" size={16} color={COLORS.text.secondary} />
-                  <Text style={styles.changeNew}>
-                    {willUseGrill 
-                      ? (language === 'es' ? 'Sí' : 'Yes')
-                      : (language === 'es' ? 'No' : 'No')}
-                  </Text>
-                </View>
-              )}
-              
-              {notes !== (reservation.notes || '') && (
-                <View style={styles.changeItem}>
-                  <Text style={styles.changeLabel}>
-                    {language === 'es' ? 'Notas actualizadas' : 'Notes updated'}
-                  </Text>
-                </View>
-              )}
-            </Card>
-          )}
-        </ScrollView>
-        
-        {/* Action Buttons */}
+          </ScrollView>
+        )}
+
+        {/* Footer Buttons */}
         <View style={styles.footer}>
           <Button
             title={language === 'es' ? 'Cancelar' : 'Cancel'}
-            variant="outline"
             onPress={onClose}
+            variant="outline"
             style={styles.footerButton}
           />
           <Button
-            title={language === 'es' ? 'Actualizar Reserva' : 'Update Reservation'}
-            onPress={handleUpdateReservation}
+            title={language === 'es' ? 'Guardar' : 'Save'}
+            onPress={handleSave}
             loading={loading}
-            disabled={!selectedSlot || loading}
+            disabled={loading || !selectedSlot}
             style={styles.footerButton}
           />
         </View>
-        
+
         {/* Date Picker Modal */}
         <DatePicker
           modal
-          mode="date"
           open={showDatePicker}
           date={selectedDate}
-          minimumDate={getMinDate()}
-          maximumDate={getMaxDate()}
-          onConfirm={(date) => {
-            setSelectedDate(date);
-            setShowDatePicker(false);
-          }}
+          mode="date"
+          minimumDate={new Date()}
+          onConfirm={handleDateChange}
           onCancel={() => setShowDatePicker(false)}
           title={language === 'es' ? 'Seleccionar Fecha' : 'Select Date'}
           confirmText={language === 'es' ? 'Confirmar' : 'Confirm'}
@@ -662,91 +524,104 @@ const EditReservationModal = ({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: COLORS.background,
+    backgroundColor: COLORS.background.primary,
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    padding: SPACING.md,
-    backgroundColor: COLORS.surface,
+    paddingHorizontal: SPACING.lg,
+    paddingVertical: SPACING.md,
     borderBottomWidth: 1,
-    borderBottomColor: COLORS.border.light,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
+    borderBottomColor: COLORS.border,
   },
   closeButton: {
-    padding: SPACING.xs,
+    padding: SPACING.sm,
   },
-  title: {
-    fontSize: FONT_SIZES.lg,
+  headerTitle: {
+    fontSize: FONT_SIZES.h3,
     fontWeight: 'bold',
     color: COLORS.text.primary,
   },
   placeholder: {
-    width: 32,
+    width: 40,
   },
   content: {
     flex: 1,
-    padding: SPACING.md,
+    paddingHorizontal: SPACING.lg,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    marginTop: SPACING.md,
+    fontSize: FONT_SIZES.body,
+    color: COLORS.text.secondary,
   },
   section: {
-    marginBottom: SPACING.md,
+    marginVertical: SPACING.sm,
+    padding: SPACING.lg,
   },
   sectionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: SPACING.sm,
+    marginBottom: SPACING.md,
   },
   sectionTitle: {
-    fontSize: FONT_SIZES.md,
+    fontSize: FONT_SIZES.h4,
     fontWeight: '600',
-    color: COLORS.text.primary,
-    marginLeft: SPACING.xs,
-  },
-  amenityName: {
-    fontSize: FONT_SIZES.lg,
-    fontWeight: 'bold',
-    color: COLORS.primary,
-    marginBottom: SPACING.xs,
-  },
-  amenityNote: {
-    fontSize: FONT_SIZES.sm,
-    color: COLORS.text.secondary,
-    fontStyle: 'italic',
-    lineHeight: 20,
-  },
-  dateButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: SPACING.md,
-    backgroundColor: COLORS.background,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: COLORS.border.light,
-  },
-  dateButtonText: {
-    flex: 1,
-    fontSize: FONT_SIZES.md,
     color: COLORS.text.primary,
     marginLeft: SPACING.sm,
   },
-  warning: {
+  amenityName: {
+    fontSize: FONT_SIZES.body,
+    color: COLORS.text.primary,
+    fontWeight: '500',
+  },
+  
+  // Duration styles
+  durationContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: SPACING.sm,
+  },
+  durationButton: {
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.sm,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    backgroundColor: COLORS.white,
+  },
+  selectedDuration: {
+    backgroundColor: COLORS.primary,
+    borderColor: COLORS.primary,
+  },
+  durationText: {
+    fontSize: FONT_SIZES.body,
+    color: COLORS.text.primary,
+    fontWeight: '500',
+  },
+  selectedDurationText: {
+    color: COLORS.white,
+  },
+  
+  dateButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: COLORS.warning + '20',
-    padding: SPACING.sm,
-    borderRadius: 6,
-    marginTop: SPACING.sm,
+    justifyContent: 'space-between',
+    paddingVertical: SPACING.md,
+    paddingHorizontal: SPACING.lg,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    backgroundColor: COLORS.white,
   },
-  warningText: {
-    flex: 1,
-    fontSize: FONT_SIZES.sm,
-    color: COLORS.warning,
-    marginLeft: SPACING.xs,
+  dateButtonText: {
+    fontSize: FONT_SIZES.body,
+    color: COLORS.text.primary,
   },
   slotsContainer: {
     flexDirection: 'row',
@@ -754,26 +629,25 @@ const styles = StyleSheet.create({
     gap: SPACING.sm,
   },
   slotButton: {
-    paddingVertical: SPACING.sm,
     paddingHorizontal: SPACING.md,
-    backgroundColor: COLORS.surface,
+    paddingVertical: SPACING.sm,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: COLORS.border.light,
+    borderColor: COLORS.border,
+    backgroundColor: COLORS.white,
     minWidth: '45%',
     alignItems: 'center',
-    marginBottom: SPACING.xs,
   },
   selectedSlot: {
     backgroundColor: COLORS.primary,
     borderColor: COLORS.primary,
   },
   currentSlot: {
-    borderColor: COLORS.warning,
-    borderWidth: 2,
+    borderColor: COLORS.success,
+    backgroundColor: COLORS.success + '10',
   },
   slotTime: {
-    fontSize: FONT_SIZES.md,
+    fontSize: FONT_SIZES.body,
     color: COLORS.text.primary,
     fontWeight: '500',
   },
@@ -781,123 +655,47 @@ const styles = StyleSheet.create({
     color: COLORS.white,
   },
   currentSlotLabel: {
-    fontSize: FONT_SIZES.xs,
-    color: COLORS.warning,
-    marginTop: SPACING.xs / 2,
+    fontSize: FONT_SIZES.small,
+    color: COLORS.success,
+    fontWeight: '600',
+    marginTop: SPACING.xs,
   },
   noSlotsText: {
-    fontSize: FONT_SIZES.md,
+    textAlign: 'center',
     color: COLORS.text.secondary,
-    textAlign: 'center',
-    padding: SPACING.lg,
+    fontSize: FONT_SIZES.body,
+    paddingVertical: SPACING.lg,
   },
-  // Lounge-specific styles
-  visitorContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: SPACING.md,
-  },
-  counterButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: COLORS.background,
-    borderWidth: 1,
-    borderColor: COLORS.primary,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  visitorInput: {
-    width: 80,
-    textAlign: 'center',
-    fontSize: FONT_SIZES.lg,
-    fontWeight: 'bold',
-  },
-  visitorNote: {
-    fontSize: FONT_SIZES.sm,
+  fieldNote: {
+    fontSize: FONT_SIZES.small,
     color: COLORS.text.secondary,
-    textAlign: 'center',
-    marginTop: SPACING.sm,
-    lineHeight: 18,
+    marginTop: SPACING.xs,
   },
-  grillContainer: {
+  switchRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: SPACING.sm,
   },
-  grillLabel: {
-    fontSize: FONT_SIZES.md,
-    color: COLORS.text.primary,
-    flex: 1,
-  },
-  grillWarning: {
+  switchLabel: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: COLORS.warning + '20',
-    padding: SPACING.sm,
-    borderRadius: 6,
-    marginTop: SPACING.sm,
-  },
-  grillWarningText: {
     flex: 1,
-    fontSize: FONT_SIZES.sm,
-    color: COLORS.warning,
-    marginLeft: SPACING.xs,
-    lineHeight: 18,
+  },
+  switchTextContainer: {
+    marginLeft: SPACING.sm,
+    flex: 1,
   },
   notesInput: {
-    minHeight: 100,
+    minHeight: 80,
     textAlignVertical: 'top',
-  },
-  charCount: {
-    fontSize: FONT_SIZES.sm,
-    color: COLORS.text.secondary,
-    textAlign: 'right',
-    marginTop: SPACING.xs,
-  },
-  changesSection: {
-    backgroundColor: COLORS.warning + '10',
-    borderColor: COLORS.warning,
-    borderWidth: 1,
-  },
-  changeItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flexWrap: 'wrap',
-    marginBottom: SPACING.xs,
-  },
-  changeLabel: {
-    fontSize: FONT_SIZES.sm,
-    fontWeight: '600',
-    color: COLORS.text.primary,
-    marginRight: SPACING.xs,
-  },
-  changeOld: {
-    fontSize: FONT_SIZES.sm,
-    color: COLORS.text.secondary,
-    textDecorationLine: 'line-through',
-    marginRight: SPACING.xs,
-  },
-  changeNew: {
-    fontSize: FONT_SIZES.sm,
-    color: COLORS.success,
-    fontWeight: '600',
-    marginLeft: SPACING.xs,
   },
   footer: {
     flexDirection: 'row',
-    padding: SPACING.md,
-    gap: SPACING.md,
-    backgroundColor: COLORS.surface,
+    paddingHorizontal: SPACING.lg,
+    paddingVertical: SPACING.lg,
     borderTopWidth: 1,
-    borderTopColor: COLORS.border.light,
-    elevation: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
+    borderTopColor: COLORS.border,
+    gap: SPACING.md,
   },
   footerButton: {
     flex: 1,

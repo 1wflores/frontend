@@ -1,106 +1,83 @@
+// src/utils/localization.js - COMPLETE WORKING VERSION
+
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-// Enhanced Localization system for Spanish/English with comprehensive translations
 export class Localization {
-  static LANGUAGE_KEY = 'app_language';
-  static currentLanguage = 'en'; // Default to English
+  // Static properties
+  static currentLanguage = 'en';
+  static LANGUAGE_KEY = '@amenity_app_language';
 
-  // Data translation mappings (English to Spanish)
+  // Data translations for server responses
   static dataTranslations = {
-    // Amenity names (stored in English, displayed in Spanish)
+    // Validation error messages from server
+    validationErrors: {
+      'End time must be after start time': 'La hora de fin debe ser después de la hora de inicio',
+      'Cannot create reservations in the past': 'No se pueden crear reservas en el pasado',
+      'The selected time slot is no longer available': 'El horario seleccionado ya no está disponible',
+      'Amenity is not available on this day': 'La amenidad no está disponible este día',
+      'Reservation duration cannot exceed 8 hours': 'La reserva no puede exceder 8 horas',
+      'Visitor count must be between 1 and 50': 'El número de visitantes debe estar entre 1 y 50',
+      'Notes must be less than 1000 characters': 'Las notas deben tener menos de 1000 caracteres',
+      'Invalid status': 'Estado inválido',
+      'Amenity not found': 'Amenidad no encontrada',
+      'User not found': 'Usuario no encontrado',
+      'Invalid credentials': 'Credenciales inválidas',
+      'Unauthorized': 'No autorizado',
+      'Forbidden': 'Prohibido',
+      'Internal server error': 'Error interno del servidor',
+    },
+
+    // Amenity names
     amenities: {
       'Jacuzzi': 'Jacuzzi',
       'Cold Tub': 'Tina Fría',
-      'Yoga Deck': 'Terraza de Yoga',
       'Community Lounge': 'Salón Comunitario',
-      'Rooftop Terrace': 'Terraza en Azotea',
-      'Gym': 'Gimnasio',
-      'Pool': 'Piscina',
-      'BBQ Area': 'Área de Barbacoa',
-      'Conference Room': 'Sala de Conferencias',
-      'Game Room': 'Sala de Juegos',
-    },
-    
-    // Amenity types
-    amenityTypes: {
-      'jacuzzi': 'jacuzzi',
-      'cold-tub': 'tina-fría',
-      'yoga-deck': 'terraza-yoga',
-      'lounge': 'salón',
-      'terrace': 'terraza',
-      'gym': 'gimnasio',
-      'pool': 'piscina',
-      'bbq': 'barbacoa',
-      'conference': 'conferencia',
-      'game-room': 'sala-juegos',
+      'Yoga Deck': 'Terraza de Yoga',
     },
 
-    // Status messages
+    // Status translations
     status: {
-      'pending': 'Pendiente',
-      'approved': 'Aprobado',
-      'denied': 'Denegado',
-      'cancelled': 'Cancelado',
-      'completed': 'Completado',
-    },
-
-    // Days of week
-    days: {
-      'Sunday': 'Domingo',
-      'Monday': 'Lunes',
-      'Tuesday': 'Martes',
-      'Wednesday': 'Miércoles', 
-      'Thursday': 'Jueves',
-      'Friday': 'Viernes',
-      'Saturday': 'Sábado',
-      'Sun': 'Dom',
-      'Mon': 'Lun',
-      'Tue': 'Mar',
-      'Wed': 'Mié',
-      'Thu': 'Jue',
-      'Fri': 'Vie',
-      'Sat': 'Sáb',
-    },
-
-    // Months
-    months: {
-      'January': 'Enero',
-      'February': 'Febrero', 
-      'March': 'Marzo',
-      'April': 'Abril',
-      'May': 'Mayo',
-      'June': 'Junio',
-      'July': 'Julio',
-      'August': 'Agosto',
-      'September': 'Septiembre',
-      'October': 'Octubre',
-      'November': 'Noviembre',
-      'December': 'Diciembre',
+      'pending': 'pendiente',
+      'approved': 'aprobado',
+      'confirmed': 'confirmado',
+      'denied': 'denegado',
+      'cancelled': 'cancelado',
+      'completed': 'completado',
     },
 
     // Common terms
     common: {
-      'Auto-approved': 'Auto-aprobado',
-      'Needs approval': 'Necesita aprobación',
-      'Grill usage requested': 'Uso de parrilla solicitado',
-      'visitors': 'visitantes',
-      'minutes': 'minutos',
-      'hours': 'horas',
-      'deposit required': 'depósito requerido',
-      'people': 'personas',
-      'person': 'persona',
-      'guests': 'huéspedes',
-      'guest': 'huésped',
-      'visitor': 'visitante',
-    },
+      'available': 'disponible',
+      'unavailable': 'no disponible',
+      'active': 'activo',
+      'inactive': 'inactivo',
+      'maintenance': 'mantenimiento',
+    }
+  };
 
-    // Server validation error translations
-    validationErrors: {
-      'Name is required': 'El nombre es requerido',
-      'Capacity must be between 1 and 100': 'La capacidad debe estar entre 1 y 100',
-      'Start time must be in the future': 'La hora de inicio debe ser en el futuro',
-      'End time must be after start time': 'La hora de fin debe ser después del inicio',
-      'Reservation cannot exceed 8 hours': 'La reserva no puede exceder 8 horas',
+  static errorMessages = {
+    en: {
+      'End time must be after start time': 'End time must be after start time',
+      'Cannot create reservations in the past': 'Cannot create reservations in the past',
+      'The selected time slot is no longer available': 'The selected time slot is no longer available',
+      'Amenity is not available on this day': 'Amenity is not available on this day',
+      'Reservation duration cannot exceed 8 hours': 'Reservation duration cannot exceed 8 hours',
+      'Visitor count must be between 1 and 50': 'Visitor count must be between 1 and 50',
+      'Notes must be less than 1000 characters': 'Notes must be less than 1000 characters',
+      'Invalid status': 'Invalid status',
+      'Amenity not found': 'Amenity not found',
+      'User not found': 'User not found',
+      'Invalid credentials': 'Invalid credentials',
+      'Unauthorized': 'Unauthorized',
+      'Forbidden': 'Forbidden',
+      'Internal server error': 'Internal server error',
+    },
+    es: {
+      'End time must be after start time': 'La hora de fin debe ser después de la hora de inicio',
+      'Cannot create reservations in the past': 'No se pueden crear reservas en el pasado',
+      'The selected time slot is no longer available': 'El horario seleccionado ya no está disponible',
+      'Amenity is not available on this day': 'La amenidad no está disponible este día',
+      'Reservation duration cannot exceed 8 hours': 'La reserva no puede exceder 8 horas',
       'Visitor count must be between 1 and 50': 'El número de visitantes debe estar entre 1 y 50',
       'Notes must be less than 1000 characters': 'Las notas deben tener menos de 1000 caracteres',
       'Invalid status': 'Estado inválido',
@@ -154,9 +131,12 @@ export class Localization {
       noUpcomingReservations: 'No upcoming reservations',
       bookAmenityToSee: 'Book an amenity to see your reservations here',
 
-      // FIXED: Added missing date/time/submitted translations
-      date: 'date',
-      time: 'time',
+      // Date/Time/Status
+      date: 'Date',
+      time: 'Time',
+      duration: 'Duration',
+      startTime: 'Start Time',
+      endTime: 'End Time',
       submitted: 'submitted',
       submittedOn: 'submitted',
       submittedAgo: 'submitted ago',
@@ -164,6 +144,7 @@ export class Localization {
       // Booking Process
       selectDate: 'Select Date',
       selectTime: 'Select Time',
+      selectDateTime: 'Select Date & Time',
       additionalDetails: 'Additional Details',
       confirmReservation: 'Confirm Reservation',
       chooseWhenToUse: 'Choose when you\'d like to use',
@@ -175,98 +156,84 @@ export class Localization {
       continue: 'Continue',
       review: 'Review',
       confirmBooking: 'Confirm Booking',
+      
+      // NEW: Community Lounge Specific
       numberOfVisitors: 'Number of Visitors',
       numberOfGuests: 'Number of Guests',
       howManyPeople: 'How many people will be attending?',
-      includeYourself: 'Include yourself in the count',
-      willYouUseGrill: 'Will you use the grill?',
+      maximumPeople: 'Maximum',
+      people: 'people',
+      willUseGrill: 'Will Use Grill',
       grillUsage: 'Grill Usage',
-      additionalDeposit: 'Additional deposit may be required',
-      specialRequests: 'Special Requests or Notes',
-      optionalNotes: 'Any special requests? (Optional)',
-      reservationSummary: 'Reservation Summary',
+      additionalFeesApply: 'Additional fees apply',
+      grillUsageNote: 'Additional fees apply for grill usage',
       
-      // Status & Actions
-      confirmed: 'Confirmed',
-      waitingForApproval: 'Waiting for Approval',
-      notApproved: 'Not Approved',
-      cancelled: 'Cancelled',
-      completed: 'Completed',
-      autoApproved: 'Auto Approved',
-      needsApproval: 'Needs Approval',
-      approve: 'Approve',
-      deny: 'Deny',
-      cancel: 'Cancel',
-      edit: 'Edit',
-      view: 'View',
-      viewDetails: 'View Details',
+      // Duration Selection
+      selectDuration: 'Select Duration',
+      howLongNeed: 'How long will you need the amenity?',
+      loungeCanBeBooked: 'Community lounge can be booked for up to 4 hours',
+      selectHowLongLounge: 'Select how long you\'ll need the community lounge',
+      showingTimeSlots: 'Showing time slots',
       
-      // Common Actions & States
-      save: 'Save',
-      ok: 'OK',
+      // Time Display
+      hour: 'hour',
+      hours: 'hours',
+      minute: 'minute',
+      minutes: 'minutes',
+      '1h': '1h',
+      '1h30m': '1h 30m',
+      '2h': '2h',
+      '2h30m': '2h 30m',
+      '3h': '3h',
+      '3h30m': '3h 30m',
+      '4h': '4h',
+      
+      // Reservation Details
+      reservationDetails: 'Reservation Details',
+      amenity: 'Amenity',
+      visitorCount: 'Visitor Count',
+      grillIncluded: 'Grill Included',
       yes: 'Yes',
       no: 'No',
-      delete: 'Delete',
-      next: 'Next',
-      submit: 'Submit',
-      confirm: 'Confirm',
-      activate: 'Activate',
-      deactivate: 'Deactivate',
-      loading: 'Loading',
+      
+      // Booking Steps
+      step1: 'Date & Time',
+      step2: 'Details',
+      dateTimeStep: 'Select Date & Time',
+      detailsStep: 'Reservation Details',
+      
+      // Availability
+      availableTimes: 'Available Times',
+      noTimeSlotsAvailable: 'No time slots available for this date',
+      tryDifferentDate: 'Try selecting a different date',
+      tryDifferentDuration: 'Try selecting a different date or duration',
+      loadingTimeSlots: 'Loading time slots...',
+      
+      // Validation Messages
+      pleaseSelectTimeSlot: 'Please select a time slot',
+      visitorCountBetween: 'Number of visitors must be between 1 and',
+      notesOptional: 'Notes (Optional)',
+      additionalNotes: 'Additional Notes',
+      anyAdditionalInfo: 'Any additional information...',
+      
+      // Success/Error
       error: 'Error',
       success: 'Success',
-      active: 'Active',
-      inactive: 'Inactive',
-      required: 'Required',
-      fieldRequired: 'This field is required',
-      invalidRequest: 'Invalid Request',
+      reservationCreated: 'Reservation created successfully!',
+      errorCreatingReservation: 'Error creating reservation',
+      loadingAmenity: 'Loading amenity...',
+      errorLoadingAmenity: 'Error loading amenity details',
       
-      // Profile Screen
-      memberSince: 'Member Since',
-      lastLogin: 'Last Login',
-      languageSettings: 'Language Settings',
-      appLanguage: 'App Language',
-      switchLanguages: 'Switch between Spanish and English',
-      quickActions: 'Quick Actions',
-      myReservations: 'My Reservations',
-      viewManageBookings: 'View and manage your bookings',
-      contactSupport: 'Contact Support',
-      technicalSupport: 'For technical support or password changes, please contact your building administrator',
-      signOut: 'Sign Out',
-      confirmSignOut: 'Are you sure you want to sign out?',
-      
-      // Admin Screens
-      userManagement: 'User Management',
-      reservationManagement: 'Reservation Management',
-      amenityManagement: 'Amenity Management',
-      createUser: 'Create User',
-      bulkCreate: 'Bulk Create',
-      totalUsers: 'Total Users',
-      activeUsers: 'Active',
-      administrators: 'Admins',
-      residents: 'Residents',
-      administrator: 'Administrator',
-      resident: 'Resident',
-      
-      // Error Messages
-      noReservationFound: 'No reservation found',
-      noUsersFound: 'No users found',
-      noAmenitiesFound: 'No amenities found',
-      networkError: 'Network error. Please check your connection.',
-      unexpectedError: 'An unexpected error occurred',
-      
-      // Misc
-      specialNotes: 'Special Notes',
-      operatingHours: 'Operating Hours',
-      capacity: 'Capacity',
-      maintenanceMode: 'Under Maintenance',
-      unavailable: 'Unavailable',
-      version: 'Version',
-      buildInfo: 'Build Information',
+      // Status
+      confirmed: 'Confirmed',
+      pending: 'Pending',
+      approved: 'Approved',
+      denied: 'Denied',
+      cancelled: 'Cancelled',
     },
     es: {
       // Navigation & General
-      dashboard: 'Panel',
+      dashboard: 'Panel Principal',
       reservations: 'Mis Reservas',
       amenities: 'Reservar Amenidades',
       profile: 'Perfil',
@@ -275,7 +242,7 @@ export class Localization {
       
       // Login Screen
       loginTitle: 'Reserva de Amenidades',
-      loginSubtitle: 'Inicia sesión con tus credenciales de apartamento',
+      loginSubtitle: 'Inicie sesión con sus credenciales de apartamento',
       apartmentUsername: 'Usuario del Apartamento',
       password: 'Contraseña',
       signIn: 'Iniciar Sesión',
@@ -287,11 +254,11 @@ export class Localization {
       goodMorning: 'Buenos días',
       goodAfternoon: 'Buenas tardes',
       goodEvening: 'Buenas noches',
-      readyToBook: '¿Listo para reservar tu próxima amenidad?',
+      readyToBook: '¿Listo para reservar su próxima amenidad?',
       today: 'Hoy',
-      pending: 'Pendientes',
+      pending: 'Pendiente',
       thisWeek: 'Esta Semana',
-      available: 'Disponibles',
+      available: 'Disponible',
       todaysReservations: 'Reservas de Hoy',
       quickBook: 'Reserva Rápida',
       viewAll: 'Ver Todas',
@@ -300,118 +267,108 @@ export class Localization {
       quickActions: 'Acciones Rápidas',
       bookAmenity: 'Reservar Amenidad',
       myBookings: 'Mis Reservas',
-      noUpcomingReservations: 'No hay próximas reservas',
-      bookAmenityToSee: 'Reserva una amenidad para ver tus reservas aquí',
+      noUpcomingReservations: 'No hay reservas próximas',
+      bookAmenityToSee: 'Reserve una amenidad para ver sus reservas aquí',
 
-      // FIXED: Added missing Spanish translations for date/time/submitted
-      date: 'fecha',
-      time: 'hora',
-      submitted: 'enviado',
-      submittedOn: 'enviado',
-      submittedAgo: 'enviado hace',
+      // Date/Time/Status
+      date: 'Fecha',
+      time: 'Hora',
+      duration: 'Duración',
+      startTime: 'Hora de Inicio',
+      endTime: 'Hora de Fin',
+      submitted: 'enviada',
+      submittedOn: 'enviada',
+      submittedAgo: 'enviada hace',
       
       // Booking Process
       selectDate: 'Seleccionar Fecha',
       selectTime: 'Seleccionar Hora',
+      selectDateTime: 'Seleccione Fecha y Hora',
       additionalDetails: 'Detalles Adicionales',
       confirmReservation: 'Confirmar Reserva',
-      chooseWhenToUse: 'Elige cuándo quieres usar',
+      chooseWhenToUse: 'Elija cuándo le gustaría usar',
       loungeWarning: 'El salón requiere reserva con 24 horas de anticipación',
       availableSlotsFor: 'Horarios disponibles para',
       selectedTime: 'Hora Seleccionada',
       changeTime: 'Cambiar Hora',
-      back: 'Atrás',
+      back: 'Anterior',
       continue: 'Continuar',
       review: 'Revisar',
       confirmBooking: 'Confirmar Reserva',
+      
+      // NEW: Community Lounge Specific
       numberOfVisitors: 'Número de Visitantes',
-      numberOfGuests: 'Número de Huéspedes',
+      numberOfGuests: 'Número de Invitados',
       howManyPeople: '¿Cuántas personas asistirán?',
-      includeYourself: 'Inclúyete en el conteo',
-      willYouUseGrill: '¿Usarás la parrilla?',
+      maximumPeople: 'Máximo',
+      people: 'personas',
+      willUseGrill: 'Usará la Parrilla',
       grillUsage: 'Uso de Parrilla',
-      additionalDeposit: 'Puede requerirse depósito adicional',
-      specialRequests: 'Solicitudes Especiales o Notas',
-      optionalNotes: '¿Alguna solicitud especial? (Opcional)',
-      reservationSummary: 'Resumen de Reserva',
+      additionalFeesApply: 'Se aplican cargos adicionales',
+      grillUsageNote: 'Se aplican cargos adicionales por el uso de la parrilla',
       
-      // Status & Actions
-      confirmed: 'Confirmado',
-      waitingForApproval: 'Esperando Aprobación',
-      notApproved: 'No Aprobado',
-      cancelled: 'Cancelado',
-      completed: 'Completado',
-      autoApproved: 'Auto Aprobado',
-      needsApproval: 'Necesita Aprobación',
-      approve: 'Aprobar',
-      deny: 'Rechazar',
-      cancel: 'Cancelar',
-      edit: 'Editar',
-      view: 'Ver',
-      viewDetails: 'Ver Detalles',
+      // Duration Selection
+      selectDuration: 'Seleccionar Duración',
+      howLongNeed: '¿Por cuánto tiempo necesitará la amenidad?',
+      loungeCanBeBooked: 'El salón comunitario puede reservarse hasta por 4 horas',
+      selectHowLongLounge: 'Seleccione cuánto tiempo necesitará el salón comunitario',
+      showingTimeSlots: 'Mostrando slots de',
       
-      // Common Actions & States
-      save: 'Guardar',
-      ok: 'OK',
+      // Time Display
+      hour: 'hora',
+      hours: 'horas',
+      minute: 'minuto',
+      minutes: 'minutos',
+      '1h': '1h',
+      '1h30m': '1h 30m',
+      '2h': '2h',
+      '2h30m': '2h 30m',
+      '3h': '3h',
+      '3h30m': '3h 30m',
+      '4h': '4h',
+      
+      // Reservation Details
+      reservationDetails: 'Detalles de la Reserva',
+      amenity: 'Amenidad',
+      visitorCount: 'Número de Visitantes',
+      grillIncluded: 'Parrilla Incluida',
       yes: 'Sí',
       no: 'No',
-      delete: 'Eliminar',
-      next: 'Siguiente',
-      submit: 'Enviar',
-      confirm: 'Confirmar',
-      activate: 'Activar',
-      deactivate: 'Desactivar',
-      loading: 'Cargando',
+      
+      // Booking Steps
+      step1: 'Fecha y Hora',
+      step2: 'Detalles',
+      dateTimeStep: 'Seleccionar Fecha y Hora',
+      detailsStep: 'Detalles de la Reserva',
+      
+      // Availability
+      availableTimes: 'Horarios Disponibles',
+      noTimeSlotsAvailable: 'No hay horarios disponibles para esta fecha',
+      tryDifferentDate: 'Intente seleccionar una fecha diferente',
+      tryDifferentDuration: 'Intente con otra fecha o duración',
+      loadingTimeSlots: 'Cargando horarios...',
+      
+      // Validation Messages
+      pleaseSelectTimeSlot: 'Por favor seleccione una hora',
+      visitorCountBetween: 'El número de visitantes debe estar entre 1 y',
+      notesOptional: 'Notas (Opcional)',
+      additionalNotes: 'Notas Adicionales',
+      anyAdditionalInfo: 'Cualquier información adicional...',
+      
+      // Success/Error
       error: 'Error',
       success: 'Éxito',
-      active: 'Activo',
-      inactive: 'Inactivo',
-      required: 'Requerido',
-      fieldRequired: 'Este campo es requerido',
-      invalidRequest: 'Solicitud Inválida',
+      reservationCreated: '¡Reserva creada exitosamente!',
+      errorCreatingReservation: 'Error al crear la reservación',
+      loadingAmenity: 'Cargando amenidad...',
+      errorLoadingAmenity: 'Error al cargar detalles de la amenidad',
       
-      // Profile Screen
-      memberSince: 'Miembro Desde',
-      lastLogin: 'Último Acceso',
-      languageSettings: 'Configuración de Idioma',
-      appLanguage: 'Idioma de la Aplicación',
-      switchLanguages: 'Cambiar entre Español e Inglés',
-      quickActions: 'Acciones Rápidas',
-      myReservations: 'Mis Reservas',
-      viewManageBookings: 'Ver y gestionar tus reservas',
-      contactSupport: 'Contactar Soporte',
-      technicalSupport: 'Para soporte técnico o cambios de contraseña, contacta al administrador del edificio',
-      signOut: 'Cerrar Sesión',
-      confirmSignOut: '¿Estás seguro de que quieres cerrar sesión?',
-      
-      // Admin Screens
-      userManagement: 'Gestión de Usuarios',
-      reservationManagement: 'Gestión de Reservas',
-      amenityManagement: 'Gestión de Amenidades',
-      createUser: 'Crear Usuario',
-      bulkCreate: 'Crear en Lote',
-      totalUsers: 'Total Usuarios',
-      activeUsers: 'Activos',
-      administrators: 'Administradores',
-      residents: 'Residentes',
-      administrator: 'Administrador',
-      resident: 'Residente',
-      
-      // Error Messages
-      noReservationFound: 'No se encontró la reserva',
-      noUsersFound: 'No se encontraron usuarios',
-      noAmenitiesFound: 'No se encontraron amenidades',
-      networkError: 'Error de red. Por favor, verifica tu conexión.',
-      unexpectedError: 'Ocurrió un error inesperado',
-      
-      // Misc
-      specialNotes: 'Notas Especiales',
-      operatingHours: 'Horarios de Operación',
-      capacity: 'Capacidad',
-      maintenanceMode: 'En Mantenimiento',
-      unavailable: 'No Disponible',
-      version: 'Versión',
-      buildInfo: 'Información de Compilación',
+      // Status
+      confirmed: 'Confirmada',
+      pending: 'Pendiente',
+      approved: 'Aprobada',
+      denied: 'Denegada',
+      cancelled: 'Cancelada',
     }
   };
 
@@ -441,9 +398,19 @@ export class Localization {
     }
   }
 
-  // Get current language
-  static getCurrentLanguage() {
-    return this.currentLanguage;
+  // Get current language - FIX: Make this async to match LanguageProvider expectations
+  static async getCurrentLanguage() {
+    try {
+      const storedLanguage = await AsyncStorage.getItem(this.LANGUAGE_KEY);
+      if (storedLanguage && ['en', 'es'].includes(storedLanguage)) {
+        this.currentLanguage = storedLanguage;
+        return storedLanguage;
+      }
+      return this.currentLanguage; // Return default if no stored language
+    } catch (error) {
+      console.error('Error getting current language:', error);
+      return this.currentLanguage; // Return default on error
+    }
   }
 
   // Get translation for a key
@@ -514,4 +481,42 @@ export class Localization {
       { code: 'es', name: 'Spanish', nativeName: 'Español' }
     ];
   }
+
+  static getTranslation(key, language = 'en') {
+    return this.translations[language]?.[key] || this.translations.en[key] || key;
+  }
+
+  static getErrorMessage(key, language = 'en') {
+    return this.errorMessages[language]?.[key] || this.errorMessages.en[key] || key;
+  }
+
+  // Helper method for pluralization
+  static pluralize(count, singular, plural, language = 'en') {
+    if (language === 'es') {
+      return count === 1 ? singular : (plural || singular + 's');
+    }
+    return count === 1 ? singular : (plural || singular + 's');
+  }
+
+  // Helper method for time duration formatting
+  static formatDuration(minutes, language = 'en') {
+    const hours = Math.floor(minutes / 60);
+    const remainingMinutes = minutes % 60;
+    
+    if (hours === 0) {
+      return `${remainingMinutes}${language === 'es' ? 'm' : 'm'}`;
+    } else if (remainingMinutes === 0) {
+      return `${hours}${language === 'es' ? 'h' : 'h'}`;
+    } else {
+      return `${hours}${language === 'es' ? 'h' : 'h'} ${remainingMinutes}${language === 'es' ? 'm' : 'm'}`;
+    }
+  }
 }
+
+// Export for hook usage
+export const useLocalization = (language = 'en') => {
+  const t = (key) => Localization.getTranslation(key, language);
+  const tError = (key) => Localization.getErrorMessage(key, language);
+  
+  return { t, tError };
+};

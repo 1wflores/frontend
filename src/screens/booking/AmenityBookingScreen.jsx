@@ -1,4 +1,4 @@
-// src/screens/booking/AmenityBookingScreen.jsx - FIXED VERSION
+// src/screens/booking/AmenityBookingScreen.jsx - UPDATED WITH LOUNGE SUPPORT
 
 import React, { useState, useEffect } from 'react';
 import {
@@ -9,6 +9,7 @@ import {
   TouchableOpacity,
   Alert,
   Switch,
+  Picker,
 } from 'react-native';
 import Icon from '@react-native-vector-icons/material-icons';
 import DatePicker from 'react-native-date-picker';
@@ -48,39 +49,66 @@ const AmenityBookingScreen = ({ route, navigation }) => {
   const [willUseGrill, setWillUseGrill] = useState(false);
   const [isLounge, setIsLounge] = useState(false);
   
+  // NEW: Duration selection for lounge
+  const [selectedDuration, setSelectedDuration] = useState(60); // Default 1 hour
+  const [availableDurations, setAvailableDurations] = useState([]);
+
+  // Load amenity details on component mount
   useEffect(() => {
     if (amenityId) {
       loadAmenityDetails();
-    } else {
-      setLoading(false);
-      Alert.alert('Error', 'No amenity ID provided');
     }
   }, [amenityId]);
-  
+
+  // Load available slots when date or duration changes
   useEffect(() => {
-    if (amenity && amenityId) {
+    if (amenity && selectedDate) {
       loadAvailableSlots();
     }
-  }, [selectedDate, amenity, amenityId]);
-  
+  }, [selectedDate, amenity, selectedDuration]);
+
   const loadAmenityDetails = async () => {
     try {
       setLoading(true);
-      console.log('📍 Loading amenity details for:', amenityId);
+      console.log('🏢 Loading amenity details for:', amenityId);
       
-      const data = await amenityService.getAmenityById(amenityId);
-      console.log('🏢 Amenity data loaded:', data);
+      const amenityData = await amenityService.getAmenityById(amenityId);
       
-      setAmenity(data);
+      if (!amenityData) {
+        throw new Error('Amenity not found');
+      }
+      
+      console.log('✅ Amenity loaded:', amenityData);
+      setAmenity(amenityData);
       
       // Check if it's a lounge amenity
-      const loungeCheck = data?.type === 'lounge' || 
-                         data?.name?.toLowerCase().includes('lounge');
+      const loungeCheck = amenityData.type === 'lounge' || 
+                         amenityData.name?.toLowerCase().includes('lounge');
       setIsLounge(loungeCheck);
       
-      console.log('🏢 Is lounge:', loungeCheck);
+      // NEW: Set up available durations for lounge
+      if (loungeCheck) {
+        const maxDuration = amenityData.maxDuration || 240; // 4 hours default
+        const durations = [];
+        
+        // Generate duration options (1, 1.5, 2, 2.5, 3, 3.5, 4 hours for lounge)
+        for (let i = 60; i <= maxDuration; i += 30) {
+          const hours = Math.floor(i / 60);
+          const minutes = i % 60;
+          const label = minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`;
+          durations.push({ value: i, label });
+        }
+        
+        setAvailableDurations(durations);
+        setSelectedDuration(120); // Default to 2 hours for lounge
+      } else {
+        // For non-lounge amenities, use fixed durations
+        setAvailableDurations([{ value: 60, label: '1h' }]);
+        setSelectedDuration(60);
+      }
+      
     } catch (error) {
-      console.error('❌ Error loading amenity:', error);
+      console.error('❌ Error loading amenity details:', error);
       Alert.alert(
         t('error') || 'Error',
         language === 'es' 
@@ -93,7 +121,7 @@ const AmenityBookingScreen = ({ route, navigation }) => {
     }
   };
   
-  // ✅ FIXED: Proper date formatting and amenityId inclusion
+  // UPDATED: Use dynamic duration instead of hardcoded 60
   const loadAvailableSlots = async () => {
     if (!amenity || !amenityId) {
       console.log('⚠️ Skipping slot loading - missing amenity or amenityId');
@@ -105,18 +133,18 @@ const AmenityBookingScreen = ({ route, navigation }) => {
       console.log('🕐 Loading available slots...', {
         amenityId,
         selectedDate,
+        duration: selectedDuration,
         amenity: amenity?.name
       });
       
-      // ✅ FIXED: Format date as YYYY-MM-DD as required by API
       const formattedDate = DateUtils.formatDate(selectedDate, 'YYYY-MM-DD');
       console.log('📅 Formatted date for API:', formattedDate);
       
-      // ✅ FIXED: Pass amenityId explicitly
+      // UPDATED: Use selected duration instead of hardcoded 60
       const slots = await reservationService.getAvailableSlots(
         amenityId, 
         formattedDate, 
-        60 // default duration
+        selectedDuration // Dynamic duration
       );
       
       console.log('✅ Available slots loaded:', slots);
@@ -124,8 +152,6 @@ const AmenityBookingScreen = ({ route, navigation }) => {
     } catch (error) {
       console.error('❌ Error loading available slots:', error);
       setAvailableSlots([]);
-      
-      // Don't show alert for every slot loading error, just log it
       console.log('Slots loading failed, showing empty slots');
     } finally {
       setLoadingSlots(false);
@@ -142,6 +168,13 @@ const AmenityBookingScreen = ({ route, navigation }) => {
   const handleSlotSelection = (slot) => {
     console.log('🕐 Slot selected:', slot);
     setSelectedSlot(slot);
+  };
+
+  // NEW: Handle duration change for lounge
+  const handleDurationChange = (duration) => {
+    console.log('⏱️ Duration changed to:', duration);
+    setSelectedDuration(duration);
+    setSelectedSlot(null); // Clear selected slot when duration changes
   };
 
   const handleNextStep = () => {
@@ -183,9 +216,27 @@ const AmenityBookingScreen = ({ route, navigation }) => {
       if (!selectedSlot) {
         Alert.alert(
           t('error') || 'Error',
-          language === 'es' ? 'Por favor seleccione una hora' : 'Please select a time slot'
+          language === 'es' 
+            ? 'Por favor seleccione una hora' 
+            : 'Please select a time slot'
         );
         return;
+      }
+
+      // Validate lounge-specific fields
+      if (isLounge) {
+        const visitorNum = parseInt(visitorCount);
+        const maxCapacity = amenity?.capacity || 20;
+        
+        if (visitorNum < 1 || visitorNum > maxCapacity) {
+          Alert.alert(
+            t('error') || 'Error',
+            language === 'es' 
+              ? `Número de visitantes debe estar entre 1 y ${maxCapacity}`
+              : `Number of visitors must be between 1 and ${maxCapacity}`
+          );
+          return;
+        }
       }
 
       // Build reservation data
@@ -193,7 +244,7 @@ const AmenityBookingScreen = ({ route, navigation }) => {
         amenityId,
         startTime: selectedSlot.startTime,
         endTime: selectedSlot.endTime,
-        durationMinutes: selectedSlot.durationMinutes || 60,
+        durationMinutes: selectedDuration,
         notes: notes.trim(),
       };
 
@@ -232,6 +283,39 @@ const AmenityBookingScreen = ({ route, navigation }) => {
         {language === 'es' ? 'Seleccione Fecha y Hora' : 'Select Date & Time'}
       </Text>
 
+      {/* NEW: Duration Selection for Lounge */}
+      {isLounge && (
+        <Card style={styles.selectionCard}>
+          <Text style={styles.sectionTitle}>
+            {language === 'es' ? 'Duración' : 'Duration'}
+          </Text>
+          <View style={styles.durationContainer}>
+            {availableDurations.map((duration) => (
+              <TouchableOpacity
+                key={duration.value}
+                style={[
+                  styles.durationButton,
+                  selectedDuration === duration.value && styles.selectedDuration
+                ]}
+                onPress={() => handleDurationChange(duration.value)}
+              >
+                <Text style={[
+                  styles.durationText,
+                  selectedDuration === duration.value && styles.selectedDurationText
+                ]}>
+                  {duration.label}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+          <Text style={styles.durationNote}>
+            {language === 'es' 
+              ? 'Seleccione cuánto tiempo necesitará el salón comunitario'
+              : 'Select how long you\'ll need the community lounge'}
+          </Text>
+        </Card>
+      )}
+
       {/* Date Selection */}
       <Card style={styles.selectionCard}>
         <Text style={styles.sectionTitle}>
@@ -258,6 +342,15 @@ const AmenityBookingScreen = ({ route, navigation }) => {
           {loadingSlots && <LoadingSpinner size="small" />}
         </View>
         
+        {/* NEW: Show selected duration info for lounge */}
+        {isLounge && selectedDuration > 60 && (
+          <Text style={styles.durationInfo}>
+            {language === 'es' 
+              ? `Mostrando slots de ${Math.floor(selectedDuration/60)}h ${selectedDuration%60 > 0 ? (selectedDuration%60) + 'm' : ''}`
+              : `Showing ${Math.floor(selectedDuration/60)}h${selectedDuration%60 > 0 ? ` ${selectedDuration%60}m` : ''} time slots`}
+          </Text>
+        )}
+        
         {loadingSlots ? (
           <View style={styles.loadingContainer}>
             <Text style={styles.loadingText}>
@@ -281,7 +374,12 @@ const AmenityBookingScreen = ({ route, navigation }) => {
                     selectedSlot?.startTime === slot.startTime && styles.selectedSlotText,
                   ]}
                 >
-                  {DateUtils.formatTime(slot.startTime)}
+                  {/* NEW: Show start and end time for better clarity */}
+                  {isLounge ? (
+                    `${DateUtils.formatTime(slot.startTime)} - ${DateUtils.formatTime(slot.endTime)}`
+                  ) : (
+                    DateUtils.formatTime(slot.startTime)
+                  )}
                 </Text>
               </TouchableOpacity>
             ))}
@@ -296,8 +394,8 @@ const AmenityBookingScreen = ({ route, navigation }) => {
             </Text>
             <Text style={styles.noSlotsSubtext}>
               {language === 'es' 
-                ? 'Intente con otra fecha'
-                : 'Try selecting a different date'}
+                ? 'Intente con otra fecha o duración'
+                : 'Try selecting a different date or duration'}
             </Text>
           </View>
         )}
@@ -330,7 +428,7 @@ const AmenityBookingScreen = ({ route, navigation }) => {
         <View style={styles.summaryRow}>
           <Icon name="place" size={20} color={COLORS.primary} />
           <Text style={styles.summaryLabel}>
-            {language === 'es' ? 'Amenidad:' : 'Amenity:'}
+            {language === 'es' ? 'Amenidad' : 'Amenity'}
           </Text>
           <Text style={styles.summaryValue}>{amenity?.name}</Text>
         </View>
@@ -338,7 +436,7 @@ const AmenityBookingScreen = ({ route, navigation }) => {
         <View style={styles.summaryRow}>
           <Icon name="calendar-today" size={20} color={COLORS.primary} />
           <Text style={styles.summaryLabel}>
-            {language === 'es' ? 'Fecha:' : 'Date:'}
+            {language === 'es' ? 'Fecha' : 'Date'}
           </Text>
           <Text style={styles.summaryValue}>
             {DateUtils.formatDate(selectedDate, language === 'es' ? 'DD/MM/YYYY' : 'MM/DD/YYYY')}
@@ -348,102 +446,116 @@ const AmenityBookingScreen = ({ route, navigation }) => {
         <View style={styles.summaryRow}>
           <Icon name="schedule" size={20} color={COLORS.primary} />
           <Text style={styles.summaryLabel}>
-            {language === 'es' ? 'Hora:' : 'Time:'}
+            {language === 'es' ? 'Hora' : 'Time'}
           </Text>
           <Text style={styles.summaryValue}>
-            {selectedSlot ? DateUtils.formatTime(selectedSlot.startTime) : 'N/A'}
+            {selectedSlot ? (
+              isLounge ? (
+                `${DateUtils.formatTime(selectedSlot.startTime)} - ${DateUtils.formatTime(selectedSlot.endTime)}`
+              ) : (
+                DateUtils.formatTime(selectedSlot.startTime)
+              )
+            ) : '-'}
           </Text>
         </View>
+
+        {/* NEW: Show duration for lounge */}
+        {isLounge && (
+          <View style={styles.summaryRow}>
+            <Icon name="timer" size={20} color={COLORS.primary} />
+            <Text style={styles.summaryLabel}>
+              {language === 'es' ? 'Duración' : 'Duration'}
+            </Text>
+            <Text style={styles.summaryValue}>
+              {Math.floor(selectedDuration/60)}h {selectedDuration%60 > 0 ? `${selectedDuration%60}m` : ''}
+            </Text>
+          </View>
+        )}
       </Card>
 
-      {/* Lounge-specific options */}
+      {/* UPDATED: Lounge-specific fields */}
       {isLounge && (
-        <Card style={styles.optionsCard}>
-          <Text style={styles.sectionTitle}>
-            {language === 'es' ? 'Opciones Adicionales' : 'Additional Options'}
-          </Text>
-          
-          <View style={styles.optionRow}>
-            <Text style={styles.optionLabel}>
-              {language === 'es' ? 'Número de Visitantes:' : 'Number of Visitors:'}
-            </Text>
+        <>
+          {/* Visitor Count */}
+          <Card style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <Icon name="group" size={20} color={COLORS.primary} />
+              <Text style={styles.sectionTitle}>
+                {language === 'es' ? 'Número de Visitantes' : 'Number of Visitors'}
+              </Text>
+            </View>
             <Input
               value={visitorCount}
               onChangeText={setVisitorCount}
+              placeholder={language === 'es' ? 'Ej: 5' : 'e.g. 5'}
               keyboardType="numeric"
-              style={styles.visitorInput}
               maxLength={2}
+              style={styles.visitorInput}
             />
-          </View>
-          
-          <View style={styles.optionRow}>
-            <Text style={styles.optionLabel}>
-              {language === 'es' ? 'Usar Parrilla:' : 'Use Grill:'}
+            <Text style={styles.fieldNote}>
+              {language === 'es' 
+                ? `Máximo ${amenity?.capacity || 20} personas`
+                : `Maximum ${amenity?.capacity || 20} people`}
             </Text>
-            <Switch
-              value={willUseGrill}
-              onValueChange={setWillUseGrill}
-              trackColor={{ false: COLORS.border.light, true: COLORS.primary }}
-              thumbColor={willUseGrill ? COLORS.white : COLORS.text.secondary}
-            />
-          </View>
-        </Card>
+          </Card>
+
+          {/* Grill Usage */}
+          <Card style={styles.section}>
+            <View style={styles.switchRow}>
+              <View style={styles.switchLabel}>
+                <Icon name="outdoor-grill" size={20} color={COLORS.primary} />
+                <View style={styles.switchTextContainer}>
+                  <Text style={styles.sectionTitle}>
+                    {language === 'es' ? 'Uso de Parrilla' : 'Grill Usage'}
+                  </Text>
+                  <Text style={styles.fieldNote}>
+                    {language === 'es' 
+                      ? 'Se aplican cargos adicionales'
+                      : 'Additional fees apply'}
+                  </Text>
+                </View>
+              </View>
+              <Switch
+                value={willUseGrill}
+                onValueChange={setWillUseGrill}
+                trackColor={{ false: COLORS.background.secondary, true: COLORS.primary }}
+                thumbColor={willUseGrill ? COLORS.white : COLORS.text.secondary}
+              />
+            </View>
+          </Card>
+        </>
       )}
 
       {/* Notes */}
-      <Card style={styles.notesCard}>
-        <Text style={styles.sectionTitle}>
-          {language === 'es' ? 'Notas (Opcional)' : 'Notes (Optional)'}
-        </Text>
+      <Card style={styles.section}>
+        <View style={styles.sectionHeader}>
+          <Icon name="notes" size={20} color={COLORS.primary} />
+          <Text style={styles.sectionTitle}>
+            {language === 'es' ? 'Notas Adicionales' : 'Additional Notes'}
+          </Text>
+        </View>
         <Input
           value={notes}
           onChangeText={setNotes}
           placeholder={language === 'es' 
-            ? 'Agregar notas adicionales...'
-            : 'Add additional notes...'}
+            ? 'Cualquier información adicional...'
+            : 'Any additional information...'}
           multiline
           numberOfLines={3}
-          maxLength={500}
           style={styles.notesInput}
+          maxLength={500}
         />
-        <Text style={styles.charCount}>
-          {notes.length}/500
-        </Text>
       </Card>
     </ScrollView>
   );
 
-  const renderStepIndicator = () => (
-    <View style={styles.stepIndicator}>
-      <View style={[styles.step, currentStep >= 1 && styles.activeStep]}>
-        <Text style={[styles.stepNumber, currentStep >= 1 && styles.activeStepNumber]}>1</Text>
-      </View>
-      <View style={[styles.stepLine, currentStep >= 2 && styles.activeStepLine]} />
-      <View style={[styles.step, currentStep >= 2 && styles.activeStep]}>
-        <Text style={[styles.stepNumber, currentStep >= 2 && styles.activeStepNumber]}>2</Text>
-      </View>
-    </View>
-  );
-
   if (loading) {
     return (
-      <LoadingSpinner 
-        message={language === 'es' ? 'Cargando amenidad...' : 'Loading amenity...'} 
-      />
-    );
-  }
-
-  if (!amenity) {
-    return (
-      <View style={styles.errorContainer}>
-        <Icon name="error" size={64} color={COLORS.error} />
-        <Text style={styles.errorText}>
-          {language === 'es' ? 'Amenidad no encontrada' : 'Amenity not found'}
+      <View style={styles.loadingContainer}>
+        <LoadingSpinner size="large" />
+        <Text style={styles.loadingText}>
+          {language === 'es' ? 'Cargando amenidad...' : 'Loading amenity...'}
         </Text>
-        <Button
-          title={language === 'es' ? 'Volver' : 'Go Back'}
-          onPress={() => navigation.goBack()}
-        />
       </View>
     );
   }
@@ -452,40 +564,51 @@ const AmenityBookingScreen = ({ route, navigation }) => {
     <View style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.title}>{amenity.name}</Text>
-        <Text style={styles.subtitle}>
-          {language === 'es' ? 'Nueva Reservación' : 'New Reservation'}
-        </Text>
+        <TouchableOpacity
+          style={styles.backButton}
+          onPress={() => navigation.goBack()}
+        >
+          <Icon name="arrow-back" size={24} color={COLORS.primary} />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>{amenity?.name}</Text>
+        <View style={styles.placeholder} />
       </View>
 
-      {/* Step Indicator */}
-      {renderStepIndicator()}
+      {/* Progress Indicators */}
+      <View style={styles.progressContainer}>
+        <View style={[styles.progressStep, currentStep >= 1 && styles.activeStep]}>
+          <Text style={[styles.progressNumber, currentStep >= 1 && styles.activeStepText]}>1</Text>
+        </View>
+        <View style={[styles.progressLine, currentStep > 1 && styles.activeProgressLine]} />
+        <View style={[styles.progressStep, currentStep >= 2 && styles.activeStep]}>
+          <Text style={[styles.progressNumber, currentStep >= 2 && styles.activeStepText]}>2</Text>
+        </View>
+      </View>
 
-      {/* Step Content */}
+      {/* Content */}
       <View style={styles.content}>
         {currentStep === 1 ? renderDateTimeStep() : renderDetailsStep()}
       </View>
 
-      {/* Action Buttons */}
-      <View style={styles.actionButtons}>
+      {/* Navigation Buttons */}
+      <View style={styles.navigationContainer}>
         {currentStep > 1 && (
           <Button
-            title={language === 'es' ? 'Anterior' : 'Previous'}
-            variant="outline"
+            title={language === 'es' ? 'Anterior' : 'Back'}
             onPress={handlePreviousStep}
-            style={styles.previousButton}
+            variant="outline"
+            style={styles.navButton}
           />
         )}
         <Button
-          title={
-            currentStep === 1 
-              ? (language === 'es' ? 'Siguiente' : 'Next')
-              : (language === 'es' ? 'Confirmar Reservación' : 'Confirm Reservation')
+          title={currentStep === 1 
+            ? (language === 'es' ? 'Continuar' : 'Continue')
+            : (language === 'es' ? 'Confirmar Reservación' : 'Confirm Booking')
           }
           onPress={handleNextStep}
           loading={reservationLoading}
           disabled={currentStep === 1 && !selectedSlot}
-          style={styles.nextButton}
+          style={[styles.navButton, currentStep === 1 && styles.singleButton]}
         />
       </View>
     </View>
@@ -495,57 +618,74 @@ const AmenityBookingScreen = ({ route, navigation }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: COLORS.background,
+    backgroundColor: COLORS.background.primary,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    marginTop: SPACING.md,
+    fontSize: FONT_SIZES.body,
+    color: COLORS.text.secondary,
   },
   header: {
-    backgroundColor: COLORS.surface,
-    padding: SPACING.lg,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: SPACING.lg,
+    paddingVertical: SPACING.md,
     borderBottomWidth: 1,
-    borderBottomColor: COLORS.border.light,
+    borderBottomColor: COLORS.border,
   },
-  title: {
-    fontSize: FONT_SIZES.xl,
+  backButton: {
+    padding: SPACING.sm,
+  },
+  headerTitle: {
+    fontSize: FONT_SIZES.h3,
     fontWeight: 'bold',
     color: COLORS.text.primary,
   },
-  subtitle: {
-    fontSize: FONT_SIZES.md,
-    color: COLORS.text.secondary,
-    marginTop: SPACING.xs,
+  placeholder: {
+    width: 40,
   },
-  stepIndicator: {
+  progressContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: SPACING.lg,
-    backgroundColor: COLORS.surface,
+    paddingHorizontal: SPACING.xl,
   },
-  step: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: COLORS.border.light,
-    alignItems: 'center',
+  progressStep: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: COLORS.background.secondary,
+    borderWidth: 2,
+    borderColor: COLORS.border,
     justifyContent: 'center',
+    alignItems: 'center',
   },
   activeStep: {
     backgroundColor: COLORS.primary,
+    borderColor: COLORS.primary,
   },
-  stepNumber: {
-    fontSize: FONT_SIZES.sm,
+  progressNumber: {
+    fontSize: FONT_SIZES.body,
     fontWeight: 'bold',
     color: COLORS.text.secondary,
   },
-  activeStepNumber: {
+  activeStepText: {
     color: COLORS.white,
   },
-  stepLine: {
-    width: 60,
+  progressLine: {
+    flex: 1,
     height: 2,
-    backgroundColor: COLORS.border.light,
-    marginHorizontal: SPACING.sm,
+    backgroundColor: COLORS.border,
+    marginHorizontal: SPACING.md,
   },
-  activeStepLine: {
+  activeProgressLine: {
     backgroundColor: COLORS.primary,
   },
   content: {
@@ -553,10 +693,10 @@ const styles = StyleSheet.create({
   },
   stepContent: {
     flex: 1,
-    padding: SPACING.lg,
+    paddingHorizontal: SPACING.lg,
   },
   stepTitle: {
-    fontSize: FONT_SIZES.lg,
+    fontSize: FONT_SIZES.h2,
     fontWeight: 'bold',
     color: COLORS.text.primary,
     marginBottom: SPACING.lg,
@@ -564,9 +704,10 @@ const styles = StyleSheet.create({
   },
   selectionCard: {
     marginBottom: SPACING.lg,
+    padding: SPACING.lg,
   },
   sectionTitle: {
-    fontSize: FONT_SIZES.md,
+    fontSize: FONT_SIZES.h4,
     fontWeight: '600',
     color: COLORS.text.primary,
     marginBottom: SPACING.sm,
@@ -574,33 +715,66 @@ const styles = StyleSheet.create({
   sectionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: SPACING.sm,
+    marginBottom: SPACING.md,
   },
+  
+  // NEW: Duration selection styles
+  durationContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: SPACING.sm,
+    marginBottom: SPACING.md,
+  },
+  durationButton: {
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.sm,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    backgroundColor: COLORS.white,
+  },
+  selectedDuration: {
+    backgroundColor: COLORS.primary,
+    borderColor: COLORS.primary,
+  },
+  durationText: {
+    fontSize: FONT_SIZES.body,
+    color: COLORS.text.primary,
+    fontWeight: '500',
+  },
+  selectedDurationText: {
+    color: COLORS.white,
+  },
+  durationNote: {
+    fontSize: FONT_SIZES.small,
+    color: COLORS.text.secondary,
+    textAlign: 'center',
+    fontStyle: 'italic',
+  },
+  durationInfo: {
+    fontSize: FONT_SIZES.small,
+    color: COLORS.primary,
+    textAlign: 'center',
+    marginBottom: SPACING.sm,
+    fontWeight: '500',
+  },
+  
   dateButton: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     paddingVertical: SPACING.md,
-    paddingHorizontal: SPACING.sm,
-    borderWidth: 1,
-    borderColor: COLORS.border.light,
+    paddingHorizontal: SPACING.lg,
     borderRadius: 8,
-    backgroundColor: COLORS.background,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    backgroundColor: COLORS.white,
   },
   dateButtonText: {
-    flex: 1,
-    fontSize: FONT_SIZES.md,
+    fontSize: FONT_SIZES.body,
     color: COLORS.text.primary,
-    marginLeft: SPACING.sm,
-  },
-  loadingContainer: {
-    paddingVertical: SPACING.xl,
-    alignItems: 'center',
-  },
-  loadingText: {
-    fontSize: FONT_SIZES.sm,
-    color: COLORS.text.secondary,
-    marginTop: SPACING.sm,
+    flex: 1,
+    marginLeft: SPACING.md,
   },
   slotsGrid: {
     flexDirection: 'row',
@@ -608,13 +782,13 @@ const styles = StyleSheet.create({
     gap: SPACING.sm,
   },
   slotButton: {
-    paddingVertical: SPACING.sm,
     paddingHorizontal: SPACING.md,
-    borderWidth: 1,
-    borderColor: COLORS.border.light,
+    paddingVertical: SPACING.sm,
     borderRadius: 8,
-    backgroundColor: COLORS.background,
-    minWidth: 80,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    backgroundColor: COLORS.white,
+    minWidth: '45%',
     alignItems: 'center',
   },
   selectedSlot: {
@@ -622,7 +796,7 @@ const styles = StyleSheet.create({
     borderColor: COLORS.primary,
   },
   slotText: {
-    fontSize: FONT_SIZES.sm,
+    fontSize: FONT_SIZES.body,
     color: COLORS.text.primary,
     fontWeight: '500',
   },
@@ -634,96 +808,79 @@ const styles = StyleSheet.create({
     paddingVertical: SPACING.xl,
   },
   noSlotsText: {
-    fontSize: FONT_SIZES.md,
-    fontWeight: '600',
-    color: COLORS.text.primary,
-    marginTop: SPACING.md,
+    fontSize: FONT_SIZES.body,
+    color: COLORS.text.secondary,
     textAlign: 'center',
+    marginTop: SPACING.md,
   },
   noSlotsSubtext: {
-    fontSize: FONT_SIZES.sm,
+    fontSize: FONT_SIZES.small,
     color: COLORS.text.secondary,
-    marginTop: SPACING.xs,
     textAlign: 'center',
+    marginTop: SPACING.sm,
   },
   summaryCard: {
     marginBottom: SPACING.lg,
+    padding: SPACING.lg,
   },
   summaryRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: SPACING.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.border.light,
+    marginBottom: SPACING.md,
   },
   summaryLabel: {
-    fontSize: FONT_SIZES.sm,
+    fontSize: FONT_SIZES.body,
     color: COLORS.text.secondary,
-    marginLeft: SPACING.sm,
+    marginLeft: SPACING.md,
     flex: 1,
   },
   summaryValue: {
-    fontSize: FONT_SIZES.sm,
-    fontWeight: '600',
+    fontSize: FONT_SIZES.body,
     color: COLORS.text.primary,
+    fontWeight: '500',
   },
-  optionsCard: {
+  section: {
     marginBottom: SPACING.lg,
+    padding: SPACING.lg,
   },
-  optionRow: {
+  visitorInput: {
+    marginBottom: SPACING.sm,
+  },
+  fieldNote: {
+    fontSize: FONT_SIZES.small,
+    color: COLORS.text.secondary,
+  },
+  switchRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: SPACING.sm,
   },
-  optionLabel: {
-    fontSize: FONT_SIZES.sm,
-    color: COLORS.text.primary,
+  switchLabel: {
+    flexDirection: 'row',
+    alignItems: 'center',
     flex: 1,
   },
-  visitorInput: {
-    width: 80,
-    textAlign: 'center',
-  },
-  notesCard: {
-    marginBottom: SPACING.lg,
+  switchTextContainer: {
+    marginLeft: SPACING.md,
+    flex: 1,
   },
   notesInput: {
     minHeight: 80,
     textAlignVertical: 'top',
   },
-  charCount: {
-    fontSize: FONT_SIZES.xs,
-    color: COLORS.text.secondary,
-    textAlign: 'right',
-    marginTop: SPACING.xs,
-  },
-  actionButtons: {
+  navigationContainer: {
     flexDirection: 'row',
-    padding: SPACING.lg,
-    backgroundColor: COLORS.surface,
+    paddingHorizontal: SPACING.lg,
+    paddingVertical: SPACING.lg,
     borderTopWidth: 1,
-    borderTopColor: COLORS.border.light,
-    gap: SPACING.sm,
+    borderTopColor: COLORS.border,
+    gap: SPACING.md,
   },
-  previousButton: {
+  navButton: {
     flex: 1,
   },
-  nextButton: {
-    flex: 1,
-  },
-  errorContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: SPACING.xl,
-  },
-  errorText: {
-    fontSize: FONT_SIZES.lg,
-    color: COLORS.error,
-    textAlign: 'center',
-    marginTop: SPACING.md,
-    marginBottom: SPACING.lg,
+  singleButton: {
+    marginLeft: 0,
   },
 });
 
