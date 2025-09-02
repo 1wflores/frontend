@@ -1,4 +1,4 @@
-// src/screens/booking/AmenityBookingScreen.jsx - UPDATED WITH LOUNGE SUPPORT
+// src/screens/booking/AmenityBookingScreen.jsx - IMPROVED LOUNGE BOOKING
 
 import React, { useState, useEffect } from 'react';
 import {
@@ -9,9 +9,8 @@ import {
   TouchableOpacity,
   Alert,
   Switch,
-  Picker,
 } from 'react-native';
-import Icon from '@react-native-vector-icons/material-icons';
+import Icon from 'react-native-vector-icons/MaterialIcons';
 import DatePicker from 'react-native-date-picker';
 import { Card } from '../../components/common/Card';
 import { Button } from '../../components/common/Button';
@@ -38,20 +37,20 @@ const AmenityBookingScreen = ({ route, navigation }) => {
   const [loading, setLoading] = useState(true);
   const [currentStep, setCurrentStep] = useState(1);
   const [selectedDate, setSelectedDate] = useState(new Date());
-  const [selectedSlot, setSelectedSlot] = useState(null);
-  const [availableSlots, setAvailableSlots] = useState([]);
-  const [loadingSlots, setLoadingSlots] = useState(false);
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [notes, setNotes] = useState('');
+  
+  // NEW: Improved time selection for lounge
+  const [selectedStartTime, setSelectedStartTime] = useState(null);
+  const [selectedEndTime, setSelectedEndTime] = useState(null);
+  const [availableStartTimes, setAvailableStartTimes] = useState([]);
+  const [availableEndTimes, setAvailableEndTimes] = useState([]);
+  const [loadingTimes, setLoadingTimes] = useState(false);
   
   // Lounge-specific states
   const [visitorCount, setVisitorCount] = useState('1');
   const [willUseGrill, setWillUseGrill] = useState(false);
   const [isLounge, setIsLounge] = useState(false);
-  
-  // NEW: Duration selection for lounge
-  const [selectedDuration, setSelectedDuration] = useState(60); // Default 1 hour
-  const [availableDurations, setAvailableDurations] = useState([]);
 
   // Load amenity details on component mount
   useEffect(() => {
@@ -60,12 +59,22 @@ const AmenityBookingScreen = ({ route, navigation }) => {
     }
   }, [amenityId]);
 
-  // Load available slots when date or duration changes
+  // Load available start times when date changes
   useEffect(() => {
     if (amenity && selectedDate) {
-      loadAvailableSlots();
+      loadAvailableStartTimes();
     }
-  }, [selectedDate, amenity, selectedDuration]);
+  }, [selectedDate, amenity]);
+
+  // Load available end times when start time changes
+  useEffect(() => {
+    if (selectedStartTime && amenity) {
+      loadAvailableEndTimes();
+    } else {
+      setAvailableEndTimes([]);
+      setSelectedEndTime(null);
+    }
+  }, [selectedStartTime, amenity]);
 
   const loadAmenityDetails = async () => {
     try {
@@ -86,26 +95,7 @@ const AmenityBookingScreen = ({ route, navigation }) => {
                          amenityData.name?.toLowerCase().includes('lounge');
       setIsLounge(loungeCheck);
       
-      // NEW: Set up available durations for lounge
-      if (loungeCheck) {
-        const maxDuration = amenityData.maxDuration || 240; // 4 hours default
-        const durations = [];
-        
-        // Generate duration options (1, 1.5, 2, 2.5, 3, 3.5, 4 hours for lounge)
-        for (let i = 60; i <= maxDuration; i += 30) {
-          const hours = Math.floor(i / 60);
-          const minutes = i % 60;
-          const label = minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`;
-          durations.push({ value: i, label });
-        }
-        
-        setAvailableDurations(durations);
-        setSelectedDuration(120); // Default to 2 hours for lounge
-      } else {
-        // For non-lounge amenities, use fixed durations
-        setAvailableDurations([{ value: 60, label: '1h' }]);
-        setSelectedDuration(60);
-      }
+      console.log('🏛️ Is lounge:', loungeCheck);
       
     } catch (error) {
       console.error('❌ Error loading amenity details:', error);
@@ -121,74 +111,251 @@ const AmenityBookingScreen = ({ route, navigation }) => {
     }
   };
   
-  // UPDATED: Use dynamic duration instead of hardcoded 60
-  const loadAvailableSlots = async () => {
+  const loadAvailableStartTimes = async () => {
     if (!amenity || !amenityId) {
-      console.log('⚠️ Skipping slot loading - missing amenity or amenityId');
+      console.log('⚠️ Skipping time loading - missing amenity or amenityId');
       return;
     }
 
     try {
-      setLoadingSlots(true);
-      console.log('🕐 Loading available slots...', {
-        amenityId,
-        selectedDate,
-        duration: selectedDuration,
-        amenity: amenity?.name
-      });
+      setLoadingTimes(true);
+      console.log('🕐 Loading available start times...');
       
       const formattedDate = DateUtils.formatDate(selectedDate, 'YYYY-MM-DD');
-      console.log('📅 Formatted date for API:', formattedDate);
       
-      // UPDATED: Use selected duration instead of hardcoded 60
-      const slots = await reservationService.getAvailableSlots(
-        amenityId, 
-        formattedDate, 
-        selectedDuration // Dynamic duration
-      );
+      // For lounge, we need to get all possible start times
+      // We'll generate 30-minute intervals and check availability
+      const startTimes = await generateAvailableStartTimes(formattedDate);
       
-      console.log('✅ Available slots loaded:', slots);
-      setAvailableSlots(slots || []);
+      console.log('✅ Available start times:', startTimes);
+      setAvailableStartTimes(startTimes);
+      
+      // Clear selections when start times change
+      setSelectedStartTime(null);
+      setSelectedEndTime(null);
+      
     } catch (error) {
-      console.error('❌ Error loading available slots:', error);
-      setAvailableSlots([]);
-      console.log('Slots loading failed, showing empty slots');
+      console.error('❌ Error loading start times:', error);
+      setAvailableStartTimes([]);
     } finally {
-      setLoadingSlots(false);
+      setLoadingTimes(false);
+    }
+  };
+
+  const generateAvailableStartTimes = async (date) => {
+    try {
+      // Get operating hours for the amenity
+      const operatingHours = amenity.operatingHours || { start: '08:00', end: '23:00' };
+      const [startHour, startMinute] = operatingHours.start.split(':').map(Number);
+      const [endHour, endMinute] = operatingHours.end.split(':').map(Number);
+      
+      // FIXED: Get actual max duration from amenity data with proper fallback
+      let maxDurationMinutes = amenity.maxDuration || 
+                               amenity.maxDurationMinutes || 
+                               amenity.autoApprovalRules?.maxDurationMinutes ||
+                               (isLounge ? 900 : 60); // FIXED: Changed fallback from 240 to 900
+      
+      maxDurationMinutes = parseInt(maxDurationMinutes);
+      const maxDurationHours = maxDurationMinutes / 60;
+      
+      console.log(`📊 Using max duration: ${maxDurationMinutes} minutes (${maxDurationHours} hours)`);
+      
+      // Get existing reservations for this date
+      const existingReservations = await getExistingReservations(date);
+      
+      const startTimes = [];
+      const dateObj = new Date(date);
+      
+      // Calculate the latest possible start time
+      // We need to ensure there's enough time before operating hours end
+      const latestStartHour = endHour - Math.ceil(maxDurationHours);
+      const actualLatestStartHour = Math.max(startHour, latestStartHour);
+      
+      console.log(`🏢 Operating hours: ${startHour}:${startMinute.toString().padStart(2, '0')} - ${endHour}:${endMinute.toString().padStart(2, '0')}`);
+      console.log(`⏰ Latest start time: ${actualLatestStartHour}:00 (to allow ${maxDurationHours}h duration)`);
+      
+      // Generate 30-minute intervals from opening to latest start time
+      for (let hour = startHour; hour <= actualLatestStartHour; hour++) {
+        for (let minute = 0; minute < 60; minute += 30) {
+          // Skip if we're past the latest start time
+          if (hour === actualLatestStartHour && minute > endMinute) break;
+          
+          const timeSlot = new Date(dateObj);
+          timeSlot.setHours(hour, minute, 0, 0);
+          
+          // Make sure this start time allows for at least 30 minutes before closing
+          const minimumEndTime = new Date(timeSlot.getTime() + (30 * 60 * 1000));
+          const operatingEndTime = new Date(dateObj);
+          operatingEndTime.setHours(endHour, endMinute, 0, 0);
+          
+          if (minimumEndTime > operatingEndTime) {
+            continue; // Skip this start time if it doesn't allow minimum duration
+          }
+          
+          // Check if this time slot conflicts with existing reservations
+          const hasConflict = existingReservations.some(reservation => {
+            const resStart = new Date(reservation.startTime);
+            const resEnd = new Date(reservation.endTime);
+            return timeSlot >= resStart && timeSlot < resEnd;
+          });
+          
+          if (!hasConflict) {
+            startTimes.push({
+              time: timeSlot,
+              label: DateUtils.formatTime(timeSlot),
+              value: timeSlot.toISOString()
+            });
+          }
+        }
+      }
+      
+      console.log(`✅ Generated ${startTimes.length} available start times`);
+      return startTimes;
+    } catch (error) {
+      console.error('Error generating start times:', error);
+      return [];
+    }
+  };
+
+  const loadAvailableEndTimes = () => {
+    if (!selectedStartTime || !amenity) return;
+    
+    try {
+      console.log('🕐 Loading available end times for start:', selectedStartTime.label);
+      
+      const startTime = new Date(selectedStartTime.time);
+      const operatingHours = amenity.operatingHours || { start: '08:00', end: '23:00' };
+      const [endHour, endMinute] = operatingHours.end.split(':').map(Number);
+      
+      // Create the operating end time for this date
+      const operatingEndTime = new Date(startTime);
+      operatingEndTime.setHours(endHour, endMinute, 0, 0);
+      
+      const endTimes = [];
+      
+      // FIXED: Use proper maxDuration with fallback to 900 for lounge
+      let maxDurationMinutes = amenity.maxDuration || 
+                               amenity.maxDurationMinutes || 
+                               amenity.autoApprovalRules?.maxDurationMinutes ||
+                               (isLounge ? 900 : 60); // FIXED: Changed fallback from 240 to 900 for lounge
+      
+      // Ensure it's a number
+      maxDurationMinutes = parseInt(maxDurationMinutes);
+      
+      const minDurationMinutes = 30; // Minimum 30 minutes
+      
+      console.log(`📊 Using maxDuration: ${maxDurationMinutes} minutes (${maxDurationMinutes/60} hours)`);
+      console.log(`🏢 Operating end time: ${DateUtils.formatTime(operatingEndTime)}`);
+      
+      // Calculate the latest possible end time based on max duration
+      const maxEndTimeByDuration = new Date(startTime.getTime() + (maxDurationMinutes * 60 * 1000));
+      
+      // Use whichever is earlier: operating hours end time or max duration end time
+      const actualMaxEndTime = maxEndTimeByDuration < operatingEndTime ? maxEndTimeByDuration : operatingEndTime;
+      
+      console.log(`⏰ Actual max end time: ${DateUtils.formatTime(actualMaxEndTime)} (limited by ${maxEndTimeByDuration < operatingEndTime ? 'max duration' : 'operating hours'})`);
+      
+      // Generate end times in 30-minute intervals
+      let currentEndTime = new Date(startTime.getTime() + (minDurationMinutes * 60 * 1000));
+      
+      while (currentEndTime <= actualMaxEndTime) {
+        const duration = (currentEndTime - startTime) / (1000 * 60); // Duration in minutes
+        const durationText = formatDuration(duration);
+        
+        endTimes.push({
+          time: new Date(currentEndTime),
+          label: DateUtils.formatTime(currentEndTime),
+          value: currentEndTime.toISOString(),
+          duration: duration,
+          durationText: durationText
+        });
+        
+        // Move to next 30-minute slot
+        currentEndTime = new Date(currentEndTime.getTime() + (30 * 60 * 1000));
+        
+        // Safety check to prevent infinite loop
+        if (endTimes.length > 100) {
+          console.warn('⚠️ Breaking loop after 100 end times to prevent infinite loop');
+          break;
+        }
+      }
+      
+      console.log(`✅ Generated ${endTimes.length} available end times`);
+      setAvailableEndTimes(endTimes);
+      
+    } catch (error) {
+      console.error('❌ Error loading end times:', error);
+      setAvailableEndTimes([]);
+    }
+  };
+
+  const getExistingReservations = async (date) => {
+    try {
+      // This would need to be implemented in your reservation service
+      // For now, we'll return empty array
+      // TODO: Implement API call to get existing reservations for the date
+      return [];
+    } catch (error) {
+      console.error('Error getting existing reservations:', error);
+      return [];
+    }
+  };
+
+  const formatDuration = (minutes) => {
+    const hours = Math.floor(minutes / 60);
+    const remainingMinutes = minutes % 60;
+    
+    if (hours === 0) {
+      return `${remainingMinutes}m`;
+    } else if (remainingMinutes === 0) {
+      return `${hours}h`;
+    } else {
+      return `${hours}h ${remainingMinutes}m`;
     }
   };
 
   const handleDateChange = (date) => {
     console.log('📅 Date changed to:', date);
     setSelectedDate(date);
-    setSelectedSlot(null); // Clear selected slot when date changes
+    setSelectedStartTime(null);
+    setSelectedEndTime(null);
     setShowDatePicker(false);
   };
 
-  const handleSlotSelection = (slot) => {
-    console.log('🕐 Slot selected:', slot);
-    setSelectedSlot(slot);
+  const handleStartTimeSelection = (startTime) => {
+    console.log('🕐 Start time selected:', startTime);
+    setSelectedStartTime(startTime);
+    setSelectedEndTime(null); // Clear end time when start changes
   };
 
-  // NEW: Handle duration change for lounge
-  const handleDurationChange = (duration) => {
-    console.log('⏱️ Duration changed to:', duration);
-    setSelectedDuration(duration);
-    setSelectedSlot(null); // Clear selected slot when duration changes
+  const handleEndTimeSelection = (endTime) => {
+    console.log('🕐 End time selected:', endTime);
+    setSelectedEndTime(endTime);
   };
 
   const handleNextStep = () => {
     if (currentStep === 1) {
-      // Validate date and slot selection
-      if (!selectedSlot) {
+      // Validate time selection
+      if (!selectedStartTime) {
         Alert.alert(
           t('error') || 'Error',
           language === 'es' 
-            ? 'Por favor seleccione una hora'
-            : 'Please select a time slot'
+            ? 'Por favor seleccione una hora de inicio'
+            : 'Please select a start time'
         );
         return;
       }
+
+      if (!selectedEndTime) {
+        Alert.alert(
+          t('error') || 'Error',
+          language === 'es' 
+            ? 'Por favor seleccione una hora de fin'
+            : 'Please select an end time'
+        );
+        return;
+      }
+
       setCurrentStep(2);
     } else if (currentStep === 2) {
       handleSubmitReservation();
@@ -206,19 +373,20 @@ const AmenityBookingScreen = ({ route, navigation }) => {
       console.log('📝 Submitting reservation...', {
         amenityId,
         selectedDate,
-        selectedSlot,
+        selectedStartTime,
+        selectedEndTime,
         visitorCount,
         willUseGrill,
-        notes
+        notes,
+        isLounge
       });
 
-      // Validate required fields
-      if (!selectedSlot) {
+      if (!selectedStartTime || !selectedEndTime) {
         Alert.alert(
           t('error') || 'Error',
           language === 'es' 
-            ? 'Por favor seleccione una hora' 
-            : 'Please select a time slot'
+            ? 'Por favor seleccione hora de inicio y fin'
+            : 'Please select start and end times'
         );
         return;
       }
@@ -242,13 +410,12 @@ const AmenityBookingScreen = ({ route, navigation }) => {
       // Build reservation data
       const reservationData = {
         amenityId,
-        startTime: selectedSlot.startTime,
-        endTime: selectedSlot.endTime,
-        durationMinutes: selectedDuration,
+        startTime: selectedStartTime.value,
+        endTime: selectedEndTime.value,
         notes: notes.trim(),
       };
 
-      // Add lounge-specific fields if needed
+      // Add lounge-specific fields
       if (isLounge) {
         reservationData.visitorCount = parseInt(visitorCount) || 1;
         reservationData.willUseGrill = willUseGrill;
@@ -259,7 +426,6 @@ const AmenityBookingScreen = ({ route, navigation }) => {
       const result = await createReservation(reservationData);
       console.log('✅ Reservation created:', result);
 
-      // Navigate to confirmation screen
       navigation.replace('BookingConfirmation', {
         reservationId: result.id || result.reservationId,
         amenityId,
@@ -283,39 +449,6 @@ const AmenityBookingScreen = ({ route, navigation }) => {
         {language === 'es' ? 'Seleccione Fecha y Hora' : 'Select Date & Time'}
       </Text>
 
-      {/* NEW: Duration Selection for Lounge */}
-      {isLounge && (
-        <Card style={styles.selectionCard}>
-          <Text style={styles.sectionTitle}>
-            {language === 'es' ? 'Duración' : 'Duration'}
-          </Text>
-          <View style={styles.durationContainer}>
-            {availableDurations.map((duration) => (
-              <TouchableOpacity
-                key={duration.value}
-                style={[
-                  styles.durationButton,
-                  selectedDuration === duration.value && styles.selectedDuration
-                ]}
-                onPress={() => handleDurationChange(duration.value)}
-              >
-                <Text style={[
-                  styles.durationText,
-                  selectedDuration === duration.value && styles.selectedDurationText
-                ]}>
-                  {duration.label}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-          <Text style={styles.durationNote}>
-            {language === 'es' 
-              ? 'Seleccione cuánto tiempo necesitará el salón comunitario'
-              : 'Select how long you\'ll need the community lounge'}
-          </Text>
-        </Card>
-      )}
-
       {/* Date Selection */}
       <Card style={styles.selectionCard}>
         <Text style={styles.sectionTitle}>
@@ -333,73 +466,178 @@ const AmenityBookingScreen = ({ route, navigation }) => {
         </TouchableOpacity>
       </Card>
 
-      {/* Time Slots */}
+      {/* Start Time Selection */}
       <Card style={styles.selectionCard}>
         <View style={styles.sectionHeader}>
+          <Icon name="schedule" size={20} color={COLORS.primary} />
           <Text style={styles.sectionTitle}>
-            {language === 'es' ? 'Horarios Disponibles' : 'Available Times'}
+            {language === 'es' ? 'Hora de Inicio' : 'Start Time'}
           </Text>
-          {loadingSlots && <LoadingSpinner size="small" />}
+          {loadingTimes && <LoadingSpinner size="small" />}
         </View>
         
-        {/* NEW: Show selected duration info for lounge */}
-        {isLounge && selectedDuration > 60 && (
-          <Text style={styles.durationInfo}>
-            {language === 'es' 
-              ? `Mostrando slots de ${Math.floor(selectedDuration/60)}h ${selectedDuration%60 > 0 ? (selectedDuration%60) + 'm' : ''}`
-              : `Showing ${Math.floor(selectedDuration/60)}h${selectedDuration%60 > 0 ? ` ${selectedDuration%60}m` : ''} time slots`}
-          </Text>
-        )}
-        
-        {loadingSlots ? (
-          <View style={styles.loadingContainer}>
-            <Text style={styles.loadingText}>
-              {language === 'es' ? 'Cargando horarios...' : 'Loading time slots...'}
+        {selectedStartTime && (
+          <View style={styles.selectedTimeContainer}>
+            <Text style={styles.selectedTimeLabel}>
+              {language === 'es' ? 'Seleccionado:' : 'Selected:'}
+            </Text>
+            <Text style={styles.selectedTimeValue}>
+              {selectedStartTime.label}
             </Text>
           </View>
-        ) : availableSlots.length > 0 ? (
-          <View style={styles.slotsGrid}>
-            {availableSlots.map((slot, index) => (
+        )}
+        
+        {loadingTimes ? (
+          <View style={styles.loadingContainer}>
+            <Text style={styles.loadingText}>
+              {language === 'es' ? 'Cargando horarios...' : 'Loading times...'}
+            </Text>
+          </View>
+        ) : availableStartTimes.length > 0 ? (
+          <View style={styles.timesGrid}>
+            {availableStartTimes.map((time, index) => (
               <TouchableOpacity
                 key={index}
                 style={[
-                  styles.slotButton,
-                  selectedSlot?.startTime === slot.startTime && styles.selectedSlot,
+                  styles.timeButton,
+                  selectedStartTime?.value === time.value && styles.selectedTime,
                 ]}
-                onPress={() => handleSlotSelection(slot)}
+                onPress={() => handleStartTimeSelection(time)}
               >
                 <Text
                   style={[
-                    styles.slotText,
-                    selectedSlot?.startTime === slot.startTime && styles.selectedSlotText,
+                    styles.timeText,
+                    selectedStartTime?.value === time.value && styles.selectedTimeText,
                   ]}
                 >
-                  {/* NEW: Show start and end time for better clarity */}
-                  {isLounge ? (
-                    `${DateUtils.formatTime(slot.startTime)} - ${DateUtils.formatTime(slot.endTime)}`
-                  ) : (
-                    DateUtils.formatTime(slot.startTime)
-                  )}
+                  {time.label}
                 </Text>
               </TouchableOpacity>
             ))}
           </View>
         ) : (
-          <View style={styles.noSlotsContainer}>
+          <View style={styles.noTimesContainer}>
             <Icon name="schedule" size={48} color={COLORS.text.secondary} />
-            <Text style={styles.noSlotsText}>
+            <Text style={styles.noTimesText}>
               {language === 'es' 
-                ? 'No hay horarios disponibles para esta fecha'
-                : 'No time slots available for this date'}
-            </Text>
-            <Text style={styles.noSlotsSubtext}>
-              {language === 'es' 
-                ? 'Intente con otra fecha o duración'
-                : 'Try selecting a different date or duration'}
+                ? 'No hay horarios de inicio disponibles'
+                : 'No start times available for this date'}
             </Text>
           </View>
         )}
       </Card>
+
+      {/* DEBUG: Show maxDuration info */}
+      {selectedStartTime && (
+        <Card style={[styles.selectionCard, { backgroundColor: '#fff3cd', borderColor: '#ffeaa7' }]}>
+          <Text style={styles.debugTitle}>🐛 DEBUG INFO</Text>
+          <Text style={styles.debugText}>Amenity: {amenity?.name}</Text>
+          <Text style={styles.debugText}>Type: {amenity?.type}</Text>
+          <Text style={styles.debugText}>maxDuration: {amenity?.maxDuration} minutes</Text>
+          <Text style={styles.debugText}>isLounge: {isLounge.toString()}</Text>
+          <Text style={styles.debugText}>Available end times: {availableEndTimes.length}</Text>
+          {availableEndTimes.length > 0 && (
+            <Text style={styles.debugText}>
+              Last end time: {availableEndTimes[availableEndTimes.length - 1]?.label} 
+              ({availableEndTimes[availableEndTimes.length - 1]?.durationText})
+            </Text>
+          )}
+        </Card>
+      )}
+
+      {/* End Time Selection (only show if start time is selected) */}
+      {selectedStartTime && (
+        <Card style={styles.selectionCard}>
+          <View style={styles.sectionHeader}>
+            <Icon name="schedule" size={20} color={COLORS.success} />
+            <Text style={styles.sectionTitle}>
+              {language === 'es' ? 'Hora de Fin' : 'End Time'}
+            </Text>
+          </View>
+          
+          {selectedEndTime && (
+            <View style={styles.selectedTimeContainer}>
+              <Text style={styles.selectedTimeLabel}>
+                {language === 'es' ? 'Seleccionado:' : 'Selected:'}
+              </Text>
+              <Text style={styles.selectedTimeValue}>
+                {selectedEndTime.label} ({selectedEndTime.durationText})
+              </Text>
+            </View>
+          )}
+          
+          {availableEndTimes.length > 0 ? (
+            <View style={styles.timesGrid}>
+              {availableEndTimes.map((time, index) => (
+                <TouchableOpacity
+                  key={index}
+                  style={[
+                    styles.timeButton,
+                    styles.endTimeButton,
+                    selectedEndTime?.value === time.value && styles.selectedEndTime,
+                  ]}
+                  onPress={() => handleEndTimeSelection(time)}
+                >
+                  <Text
+                    style={[
+                      styles.timeText,
+                      selectedEndTime?.value === time.value && styles.selectedEndTimeText,
+                    ]}
+                  >
+                    {time.label}
+                  </Text>
+                  <Text
+                    style={[
+                      styles.durationText,
+                      selectedEndTime?.value === time.value && styles.selectedDurationText,
+                    ]}
+                  >
+                    {time.durationText}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          ) : (
+            <View style={styles.noTimesContainer}>
+              <Text style={styles.noTimesText}>
+                {language === 'es' 
+                  ? 'Seleccione una hora de inicio primero'
+                  : 'Please select a start time first'}
+              </Text>
+            </View>
+          )}
+        </Card>
+      )}
+
+      {/* Time Summary (show when both times selected) */}
+      {selectedStartTime && selectedEndTime && (
+        <Card style={[styles.selectionCard, styles.summaryCard]}>
+          <View style={styles.summaryHeader}>
+            <Icon name="event" size={24} color={COLORS.primary} />
+            <Text style={styles.summaryTitle}>
+              {language === 'es' ? 'Resumen de Reserva' : 'Booking Summary'}
+            </Text>
+          </View>
+          
+          <View style={styles.summaryRow}>
+            <Text style={styles.summaryLabel}>
+              {language === 'es' ? 'Horario:' : 'Time:'}
+            </Text>
+            <Text style={styles.summaryValue}>
+              {selectedStartTime.label} - {selectedEndTime.label}
+            </Text>
+          </View>
+          
+          <View style={styles.summaryRow}>
+            <Text style={styles.summaryLabel}>
+              {language === 'es' ? 'Duración:' : 'Duration:'}
+            </Text>
+            <Text style={styles.summaryValue}>
+              {selectedEndTime.durationText}
+            </Text>
+          </View>
+        </Card>
+      )}
 
       {/* Date Picker Modal */}
       <DatePicker
@@ -449,31 +687,23 @@ const AmenityBookingScreen = ({ route, navigation }) => {
             {language === 'es' ? 'Hora' : 'Time'}
           </Text>
           <Text style={styles.summaryValue}>
-            {selectedSlot ? (
-              isLounge ? (
-                `${DateUtils.formatTime(selectedSlot.startTime)} - ${DateUtils.formatTime(selectedSlot.endTime)}`
-              ) : (
-                DateUtils.formatTime(selectedSlot.startTime)
-              )
-            ) : '-'}
+            {selectedStartTime && selectedEndTime ? 
+              `${selectedStartTime.label} - ${selectedEndTime.label}` : '-'}
           </Text>
         </View>
 
-        {/* NEW: Show duration for lounge */}
-        {isLounge && (
-          <View style={styles.summaryRow}>
-            <Icon name="timer" size={20} color={COLORS.primary} />
-            <Text style={styles.summaryLabel}>
-              {language === 'es' ? 'Duración' : 'Duration'}
-            </Text>
-            <Text style={styles.summaryValue}>
-              {Math.floor(selectedDuration/60)}h {selectedDuration%60 > 0 ? `${selectedDuration%60}m` : ''}
-            </Text>
-          </View>
-        )}
+        <View style={styles.summaryRow}>
+          <Icon name="timer" size={20} color={COLORS.primary} />
+          <Text style={styles.summaryLabel}>
+            {language === 'es' ? 'Duración' : 'Duration'}
+          </Text>
+          <Text style={styles.summaryValue}>
+            {selectedEndTime?.durationText || '-'}
+          </Text>
+        </View>
       </Card>
 
-      {/* UPDATED: Lounge-specific fields */}
+      {/* Lounge-specific fields */}
       {isLounge && (
         <>
           {/* Visitor Count */}
@@ -607,7 +837,7 @@ const AmenityBookingScreen = ({ route, navigation }) => {
           }
           onPress={handleNextStep}
           loading={reservationLoading}
-          disabled={currentStep === 1 && !selectedSlot}
+          disabled={currentStep === 1 && (!selectedStartTime || !selectedEndTime)}
           style={[styles.navButton, currentStep === 1 && styles.singleButton]}
         />
       </View>
@@ -717,48 +947,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: SPACING.md,
   },
-  
-  // NEW: Duration selection styles
-  durationContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: SPACING.sm,
-    marginBottom: SPACING.md,
-  },
-  durationButton: {
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.sm,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    backgroundColor: COLORS.white,
-  },
-  selectedDuration: {
-    backgroundColor: COLORS.primary,
-    borderColor: COLORS.primary,
-  },
-  durationText: {
-    fontSize: FONT_SIZES.body,
-    color: COLORS.text.primary,
-    fontWeight: '500',
-  },
-  selectedDurationText: {
-    color: COLORS.white,
-  },
-  durationNote: {
-    fontSize: FONT_SIZES.small,
-    color: COLORS.text.secondary,
-    textAlign: 'center',
-    fontStyle: 'italic',
-  },
-  durationInfo: {
-    fontSize: FONT_SIZES.small,
-    color: COLORS.primary,
-    textAlign: 'center',
-    marginBottom: SPACING.sm,
-    fontWeight: '500',
-  },
-  
   dateButton: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -776,57 +964,100 @@ const styles = StyleSheet.create({
     flex: 1,
     marginLeft: SPACING.md,
   },
-  slotsGrid: {
+  selectedTimeContainer: {
+    backgroundColor: COLORS.primary + '10',
+    padding: SPACING.md,
+    borderRadius: 8,
+    marginBottom: SPACING.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  selectedTimeLabel: {
+    fontSize: FONT_SIZES.small,
+    color: COLORS.primary,
+    fontWeight: '600',
+    marginRight: SPACING.sm,
+  },
+  selectedTimeValue: {
+    fontSize: FONT_SIZES.body,
+    color: COLORS.primary,
+    fontWeight: 'bold',
+  },
+  timesGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: SPACING.sm,
   },
-  slotButton: {
+  timeButton: {
     paddingHorizontal: SPACING.md,
     paddingVertical: SPACING.sm,
     borderRadius: 8,
     borderWidth: 1,
     borderColor: COLORS.border,
     backgroundColor: COLORS.white,
-    minWidth: '45%',
+    minWidth: '30%',
     alignItems: 'center',
   },
-  selectedSlot: {
+  selectedTime: {
     backgroundColor: COLORS.primary,
     borderColor: COLORS.primary,
   },
-  slotText: {
+  endTimeButton: {
+    borderColor: COLORS.success,
+  },
+  selectedEndTime: {
+    backgroundColor: COLORS.success,
+    borderColor: COLORS.success,
+  },
+  timeText: {
     fontSize: FONT_SIZES.body,
     color: COLORS.text.primary,
     fontWeight: '500',
   },
-  selectedSlotText: {
+  selectedTimeText: {
     color: COLORS.white,
   },
-  noSlotsContainer: {
+  selectedEndTimeText: {
+    color: COLORS.white,
+  },
+  durationText: {
+    fontSize: FONT_SIZES.small,
+    color: COLORS.text.secondary,
+    marginTop: 2,
+  },
+  selectedDurationText: {
+    color: COLORS.white,
+  },
+  noTimesContainer: {
     alignItems: 'center',
     paddingVertical: SPACING.xl,
   },
-  noSlotsText: {
+  noTimesText: {
     fontSize: FONT_SIZES.body,
     color: COLORS.text.secondary,
     textAlign: 'center',
     marginTop: SPACING.md,
   },
-  noSlotsSubtext: {
-    fontSize: FONT_SIZES.small,
-    color: COLORS.text.secondary,
-    textAlign: 'center',
-    marginTop: SPACING.sm,
-  },
   summaryCard: {
-    marginBottom: SPACING.lg,
-    padding: SPACING.lg,
+    backgroundColor: COLORS.success + '10',
+    borderColor: COLORS.success,
+    borderWidth: 1,
+  },
+  summaryHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: SPACING.md,
+  },
+  summaryTitle: {
+    fontSize: FONT_SIZES.h4,
+    fontWeight: 'bold',
+    color: COLORS.success,
+    marginLeft: SPACING.sm,
   },
   summaryRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: SPACING.md,
+    marginBottom: SPACING.sm,
   },
   summaryLabel: {
     fontSize: FONT_SIZES.body,

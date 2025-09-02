@@ -1,3 +1,5 @@
+// src/services/amenityService.js - FIXED VERSION
+
 import { apiClient } from './apiClient';
 
 /**
@@ -11,6 +13,17 @@ class AmenityService {
   async getAllAmenities() {
     try {
       const response = await apiClient.get('/api/amenities');
+      
+      // FIX: Extract amenities from response.data.data.amenities
+      if (response.data && response.data.success) {
+        return {
+          success: true,
+          data: {
+            amenities: response.data.data.amenities || []
+          }
+        };
+      }
+      
       return response.data;
     } catch (error) {
       console.error('Get all amenities error:', error);
@@ -20,13 +33,38 @@ class AmenityService {
 
   /**
    * Get amenity by ID
+   * FIX: Return the actual amenity object, not the API wrapper
    */
   async getAmenityById(id) {
     try {
+      console.log('🔍 AmenityService: Getting amenity by ID:', id);
+      
       const response = await apiClient.get(`/api/amenities/${id}`);
-      return response.data;
+      
+      console.log('📦 AmenityService: Raw API response:', response.data);
+      
+      // FIX: Extract the actual amenity object from the response
+      if (response.data && response.data.success && response.data.data && response.data.data.amenity) {
+        const amenity = response.data.data.amenity;
+        console.log('✅ AmenityService: Extracted amenity:', amenity);
+        return amenity;
+      }
+      
+      // Handle case where response structure is different
+      if (response.data && !response.data.success) {
+        throw new Error(response.data.message || 'Amenity not found');
+      }
+      
+      console.warn('⚠️ AmenityService: Unexpected response structure:', response.data);
+      return null;
     } catch (error) {
-      console.error('Get amenity by ID error:', error);
+      console.error('❌ AmenityService: Get amenity by ID error:', error);
+      
+      // If it's a 404, return null instead of throwing
+      if (error.response && error.response.status === 404) {
+        return null;
+      }
+      
       throw error;
     }
   }
@@ -91,7 +129,7 @@ class AmenityService {
       const updateData = {
         isActive,
         ...(maintenanceNotes && { maintenanceNotes }),
-        updatedAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
       };
       
       const response = await apiClient.put(`/api/amenities/${id}`, updateData);
@@ -103,71 +141,27 @@ class AmenityService {
   }
 
   /**
-   * Get amenity availability for a specific date
+   * Validate amenity data before submission
    */
-  async getAmenityAvailability(amenityId, date, duration = 60) {
-    try {
-      const response = await apiClient.get(`/api/amenities/${amenityId}/availability`, {
-        params: { date, duration }
-      });
-      return response.data;
-    } catch (error) {
-      console.error('Get amenity availability error:', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Validate amenity form data
-   */
-  validateAmenityData(data) {
+  validateAmenityData(amenityData) {
     const errors = {};
-
-    // Required fields
-    if (!data.name || !data.name.trim()) {
+    
+    if (!amenityData.name || amenityData.name.trim().length === 0) {
       errors.name = 'Name is required';
-    } else if (data.name.length > 100) {
-      errors.name = 'Name must be less than 100 characters';
     }
-
-    if (!data.type) {
+    
+    if (!amenityData.type) {
       errors.type = 'Type is required';
-    } else if (!['jacuzzi', 'cold-tub', 'yoga-deck', 'lounge'].includes(data.type)) {
-      errors.type = 'Invalid amenity type';
     }
-
-    // Capacity validation
-    const capacity = parseInt(data.capacity);
-    if (isNaN(capacity) || capacity < 1 || capacity > 100) {
-      errors.capacity = 'Capacity must be between 1 and 100';
+    
+    if (!amenityData.capacity || amenityData.capacity < 1) {
+      errors.capacity = 'Capacity must be at least 1';
     }
-
-    // Operating hours validation
-    if (!data.operatingHours) {
+    
+    if (!amenityData.operatingHours) {
       errors.operatingHours = 'Operating hours are required';
-    } else {
-      if (!data.operatingHours.start || !data.operatingHours.end) {
-        errors.operatingHours = 'Start and end times are required';
-      }
-
-      if (!data.operatingHours.days || data.operatingHours.days.length === 0) {
-        errors.days = 'At least one operating day must be selected';
-      }
     }
-
-    // Auto approval rules validation
-    if (data.autoApprovalRules) {
-      const maxDuration = parseInt(data.autoApprovalRules.maxDurationMinutes);
-      if (isNaN(maxDuration) || maxDuration < 15 || maxDuration > 480) {
-        errors.maxDuration = 'Max duration must be between 15 and 480 minutes';
-      }
-
-      const maxReservations = parseInt(data.autoApprovalRules.maxReservationsPerDay);
-      if (isNaN(maxReservations) || maxReservations < 1 || maxReservations > 10) {
-        errors.maxReservations = 'Max reservations must be between 1 and 10';
-      }
-    }
-
+    
     return {
       isValid: Object.keys(errors).length === 0,
       errors
@@ -177,24 +171,23 @@ class AmenityService {
   /**
    * Format amenity data for API submission
    */
-  formatAmenityData(formData) {
+  formatAmenityData(amenityData) {
     return {
-      name: formData.name.trim(),
-      type: formData.type,
-      description: formData.description?.trim() || '',
-      capacity: parseInt(formData.capacity),
-      operatingHours: {
-        start: formData.operatingHours.start,
-        end: formData.operatingHours.end,
-        days: formData.operatingHours.days.sort(), // Sort days array
+      name: amenityData.name?.trim(),
+      type: amenityData.type,
+      description: amenityData.description?.trim() || '',
+      capacity: parseInt(amenityData.capacity),
+      operatingHours: amenityData.operatingHours,
+      autoApprovalRules: amenityData.autoApprovalRules || {
+        maxDurationMinutes: 60,
+        maxReservationsPerDay: 3
       },
-      autoApprovalRules: {
-        maxDurationMinutes: parseInt(formData.autoApprovalRules.maxDurationMinutes),
-        maxReservationsPerDay: parseInt(formData.autoApprovalRules.maxReservationsPerDay),
-      },
-      specialRequirements: formData.specialRequirements || {},
+      specialRequirements: amenityData.specialRequirements || {},
+      isActive: amenityData.isActive !== undefined ? amenityData.isActive : true
     };
   }
 }
 
+// Export a singleton instance
 export const amenityService = new AmenityService();
+export default amenityService;
