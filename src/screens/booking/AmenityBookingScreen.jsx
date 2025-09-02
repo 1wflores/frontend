@@ -149,16 +149,7 @@ const AmenityBookingScreen = ({ route, navigation }) => {
       const [startHour, startMinute] = operatingHours.start.split(':').map(Number);
       const [endHour, endMinute] = operatingHours.end.split(':').map(Number);
       
-      // FIXED: Get actual max duration from amenity data with proper fallback
-      let maxDurationMinutes = amenity.maxDuration || 
-                               amenity.maxDurationMinutes || 
-                               amenity.autoApprovalRules?.maxDurationMinutes ||
-                               (isLounge ? 900 : 60); // FIXED: Changed fallback from 240 to 900
-      
-      maxDurationMinutes = parseInt(maxDurationMinutes);
-      const maxDurationHours = maxDurationMinutes / 60;
-      
-      console.log(`📊 Using max duration: ${maxDurationMinutes} minutes (${maxDurationHours} hours)`);
+      console.log(`🏢 Operating hours: ${startHour}:${startMinute.toString().padStart(2, '0')} - ${endHour}:${endMinute.toString().padStart(2, '0')}`);
       
       // Get existing reservations for this date
       const existingReservations = await getExistingReservations(date);
@@ -166,20 +157,12 @@ const AmenityBookingScreen = ({ route, navigation }) => {
       const startTimes = [];
       const dateObj = new Date(date);
       
-      // Calculate the latest possible start time
-      // We need to ensure there's enough time before operating hours end
-      const latestStartHour = endHour - Math.ceil(maxDurationHours);
-      const actualLatestStartHour = Math.max(startHour, latestStartHour);
+      // FIXED: Generate ALL start times during operating hours
+      // Don't limit by max duration here - that's handled in end time selection
+      // We just need to ensure there's at least 30 minutes before closing
       
-      console.log(`🏢 Operating hours: ${startHour}:${startMinute.toString().padStart(2, '0')} - ${endHour}:${endMinute.toString().padStart(2, '0')}`);
-      console.log(`⏰ Latest start time: ${actualLatestStartHour}:00 (to allow ${maxDurationHours}h duration)`);
-      
-      // Generate 30-minute intervals from opening to latest start time
-      for (let hour = startHour; hour <= actualLatestStartHour; hour++) {
+      for (let hour = startHour; hour < endHour; hour++) {
         for (let minute = 0; minute < 60; minute += 30) {
-          // Skip if we're past the latest start time
-          if (hour === actualLatestStartHour && minute > endMinute) break;
-          
           const timeSlot = new Date(dateObj);
           timeSlot.setHours(hour, minute, 0, 0);
           
@@ -189,7 +172,7 @@ const AmenityBookingScreen = ({ route, navigation }) => {
           operatingEndTime.setHours(endHour, endMinute, 0, 0);
           
           if (minimumEndTime > operatingEndTime) {
-            continue; // Skip this start time if it doesn't allow minimum duration
+            continue; // Skip if can't fit minimum 30 minutes
           }
           
           // Check if this time slot conflicts with existing reservations
@@ -209,7 +192,37 @@ const AmenityBookingScreen = ({ route, navigation }) => {
         }
       }
       
-      console.log(`✅ Generated ${startTimes.length} available start times`);
+      // Also check the final hour (e.g., 10:30 PM if closing at 11 PM)
+      if (endMinute > 0) {
+        for (let minute = 0; minute < endMinute; minute += 30) {
+          const timeSlot = new Date(dateObj);
+          timeSlot.setHours(endHour, minute, 0, 0);
+          
+          // Make sure there's at least 30 minutes before closing
+          const minimumEndTime = new Date(timeSlot.getTime() + (30 * 60 * 1000));
+          const operatingEndTime = new Date(dateObj);
+          operatingEndTime.setHours(endHour, endMinute, 0, 0);
+          
+          if (minimumEndTime <= operatingEndTime) {
+            // Check conflicts
+            const hasConflict = existingReservations.some(reservation => {
+              const resStart = new Date(reservation.startTime);
+              const resEnd = new Date(reservation.endTime);
+              return timeSlot >= resStart && timeSlot < resEnd;
+            });
+            
+            if (!hasConflict) {
+              startTimes.push({
+                time: timeSlot,
+                label: DateUtils.formatTime(timeSlot),
+                value: timeSlot.toISOString()
+              });
+            }
+          }
+        }
+      }
+      
+      console.log(`✅ Generated ${startTimes.length} available start times from ${startTimes[0]?.label} to ${startTimes[startTimes.length - 1]?.label}`);
       return startTimes;
     } catch (error) {
       console.error('Error generating start times:', error);
@@ -526,24 +539,6 @@ const AmenityBookingScreen = ({ route, navigation }) => {
           </View>
         )}
       </Card>
-
-      {/* DEBUG: Show maxDuration info */}
-      {selectedStartTime && (
-        <Card style={[styles.selectionCard, { backgroundColor: '#fff3cd', borderColor: '#ffeaa7' }]}>
-          <Text style={styles.debugTitle}>🐛 DEBUG INFO</Text>
-          <Text style={styles.debugText}>Amenity: {amenity?.name}</Text>
-          <Text style={styles.debugText}>Type: {amenity?.type}</Text>
-          <Text style={styles.debugText}>maxDuration: {amenity?.maxDuration} minutes</Text>
-          <Text style={styles.debugText}>isLounge: {isLounge.toString()}</Text>
-          <Text style={styles.debugText}>Available end times: {availableEndTimes.length}</Text>
-          {availableEndTimes.length > 0 && (
-            <Text style={styles.debugText}>
-              Last end time: {availableEndTimes[availableEndTimes.length - 1]?.label} 
-              ({availableEndTimes[availableEndTimes.length - 1]?.durationText})
-            </Text>
-          )}
-        </Card>
-      )}
 
       {/* End Time Selection (only show if start time is selected) */}
       {selectedStartTime && (
