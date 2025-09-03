@@ -1,335 +1,377 @@
-import React, { useState, useEffect } from 'react';
+// src/screens/admin/ReservationManagementScreen.jsx - ENHANCED with chronological ordering
+
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   FlatList,
+  Alert,
   TouchableOpacity,
   RefreshControl,
-  Alert,
-  Modal,
 } from 'react-native';
-import Icon from '@react-native-vector-icons/material-icons';
+import Icon from 'react-native-vector-icons/MaterialIcons';
 import { Card } from '../../components/common/Card';
 import { Button } from '../../components/common/Button';
-import { Input } from '../../components/common/Input';
 import { LoadingSpinner } from '../../components/common/LoadingSpinner';
 import { useLanguage } from '../../contexts/LanguageContext';
-import { apiClient } from '../../services/apiClient';
-import { ApiErrorTranslator } from '../../utils/apiErrorTranslator';
-import { ValidationUtils } from '../../utils/validationUtils';
+import { useReservations } from '../../hooks/useReservations';
 import { DateUtils } from '../../utils/dateUtils';
-import { Localization } from '../../utils/localization';
 import { COLORS, SPACING, FONT_SIZES } from '../../utils/constants';
 
-// Reservation status configuration
-const RESERVATION_STATUSES = {
-  pending: {
-    icon: 'schedule',
-    color: COLORS.warning,
-    labelKey: 'pending',
-  },
-  approved: {
-    icon: 'check-circle',
-    color: COLORS.success,
-    labelKey: 'approved',
-  },
-  denied: {
-    icon: 'cancel',
-    color: COLORS.error,
-    labelKey: 'denied',
-  },
-  cancelled: {
-    icon: 'cancel',
-    color: COLORS.text.secondary,
-    labelKey: 'cancelled',
-  },
-  completed: {
-    icon: 'check',
-    color: COLORS.info,
-    labelKey: 'completed',
-  },
-};
-
 const ReservationManagementScreen = ({ navigation }) => {
-  const { language, t } = useLanguage();
-  
-  const [reservations, setReservations] = useState([]);
-  const [filteredReservations, setFilteredReservations] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [selectedFilter, setSelectedFilter] = useState('all');
-  const [selectedReservation, setSelectedReservation] = useState(null);
-  const [actionModalVisible, setActionModalVisible] = useState(false);
-  const [rejectionReason, setRejectionReason] = useState('');
+  const { t, language } = useLanguage();
+  const { 
+    reservations: allReservations, 
+    loading, 
+    error,
+    fetchAllReservations,
+    approveReservation,
+    denyReservation,
+    updateReservationStatus 
+  } = useReservations();
 
+  const [filteredReservations, setFilteredReservations] = useState([]);
+  const [selectedFilter, setSelectedFilter] = useState('pending'); // Default to pending requests
+  const [refreshing, setRefreshing] = useState(false);
+  const [processingReservations, setProcessingReservations] = useState(new Set());
+
+  // Filter options
+  const filterOptions = [
+    { key: 'pending', label: language === 'es' ? 'Pendientes' : 'Pending', color: COLORS.warning },
+    { key: 'all', label: language === 'es' ? 'Todos' : 'All', color: COLORS.primary },
+    { key: 'today', label: language === 'es' ? 'Hoy' : 'Today', color: COLORS.success },
+    { key: 'lounge', label: language === 'es' ? 'Salón' : 'Lounge', color: COLORS.accent },
+  ];
+
+  // Load reservations on mount
   useEffect(() => {
-    fetchReservations();
+    loadReservations();
   }, []);
 
+  // Filter reservations when data or filter changes
   useEffect(() => {
     filterReservations();
-  }, [reservations, searchQuery, selectedFilter]);
+  }, [allReservations, selectedFilter]);
 
-  // FIXED: Enhanced fetchReservations with better error handling and debugging
-  const fetchReservations = async () => {
+  const loadReservations = async (forceRefresh = false) => {
     try {
-      setLoading(true);
-      console.log('📥 Fetching reservations from API...');
-      
-      const response = await apiClient.get('/api/reservations');
-      console.log('📊 Reservations API response:', response);
-      console.log('📊 Reservations data sample:', response.data?.slice(0, 2));
-      
-      let reservationsData = [];
-      if (response.data) {
-        if (Array.isArray(response.data)) {
-          reservationsData = response.data;
-        } else if (response.data.reservations && Array.isArray(response.data.reservations)) {
-          reservationsData = response.data.reservations;
-        } else if (response.data.data && Array.isArray(response.data.data)) {
-          reservationsData = response.data.data;
-        }
-      }
-
-      // FIXED: Debug each reservation for apartment extraction
-      reservationsData.forEach((reservation, index) => {
-        console.log(`🔍 Reservation ${index}:`, {
-          id: reservation.id,
-          username: reservation.username,
-          userId: reservation.userId,
-          user: reservation.user,
-          createdBy: reservation.createdBy,
-          apartmentExtracted: ValidationUtils.getApartmentFromReservation(reservation)
-        });
+      await fetchAllReservations(forceRefresh, {
+        includePastReservations: true // Include past reservations for full admin view
       });
-
-      setReservations(reservationsData);
-      console.log(`✅ Loaded ${reservationsData.length} reservations successfully`);
-      
     } catch (error) {
-      console.error('❌ Error fetching reservations:', error);
-      
-      // For development, create sample reservations if API fails
-      if (__DEV__ && error.response?.status !== 401) {
-        console.log('🧪 Creating sample reservations for development...');
-        const sampleReservations = [
-          {
-            id: '1',
-            amenityId: 'lounge',
-            amenityName: 'Community Lounge',
-            username: 'apartment204',
-            user: { username: 'apartment204', id: 'user1' },
-            startTime: '2025-08-23T12:30:00.000Z',
-            endTime: '2025-08-23T13:30:00.000Z',
-            status: 'pending',
-            specialRequests: { visitorCount: 5, notes: 'Grill usage requested' },
-            createdAt: '2025-08-22T09:15:00.000Z',
-            submittedAgo: '1 ago',
-          },
-          {
-            id: '2',
-            amenityId: 'jacuzzi',
-            amenityName: 'Jacuzzi',
-            username: 'apartment301',
-            user: { username: 'apartment301', id: 'user2' },
-            startTime: '2025-08-24T19:00:00.000Z',
-            endTime: '2025-08-24T20:00:00.000Z',
-            status: 'approved',
-            specialRequests: { visitorCount: 2 },
-            createdAt: '2025-08-21T14:30:00.000Z',
-            submittedAgo: '2 days ago',
-          },
-          {
-            id: '3',
-            amenityId: 'cold-tub',
-            amenityName: 'Cold Tub',
-            username: 'apartment102',
-            user: { username: 'apartment102', id: 'user3' },
-            startTime: '2025-08-25T07:00:00.000Z',
-            endTime: '2025-08-25T08:00:00.000Z',
-            status: 'pending',
-            specialRequests: { visitorCount: 1 },
-            createdAt: '2025-08-22T06:45:00.000Z',
-            submittedAgo: '3 hours ago',
-          },
-        ];
-        setReservations(sampleReservations);
-        
-        Alert.alert(
-          language === 'es' ? 'Modo de Desarrollo' : 'Development Mode',
-          language === 'es' 
-            ? 'Usando datos de muestra para reservas.'
-            : 'Using sample reservation data.'
-        );
-      } else {
-        const errorMessage = ApiErrorTranslator.extractAndTranslateError(error, language);
-        Alert.alert(t('error') || 'Error', errorMessage);
-        setReservations([]);
-      }
-    } finally {
-      setLoading(false);
+      console.error('Error loading reservations:', error);
+      Alert.alert(
+        t('error') || 'Error',
+        language === 'es' 
+          ? 'Error al cargar las reservas'
+          : 'Error loading reservations'
+      );
     }
   };
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await loadReservations(true);
+    } finally {
+      setRefreshing(false);
+    }
+  }, []);
 
   const filterReservations = () => {
-    let filtered = reservations;
+    if (!allReservations || allReservations.length === 0) {
+      setFilteredReservations([]);
+      return;
+    }
 
-    // Apply search filter
-    if (searchQuery.trim()) {
-      filtered = filtered.filter(reservation => {
-        const apartment = ValidationUtils.getApartmentFromReservation(reservation);
-        const amenityName = Localization.translateAmenity(reservation.amenityName, language);
-        
-        return (
-          apartment.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          amenityName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          reservation.id?.toLowerCase().includes(searchQuery.toLowerCase())
+    let filtered = [...allReservations];
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+    // Apply filters
+    switch (selectedFilter) {
+      case 'pending':
+        filtered = filtered.filter(r => r.status === 'pending');
+        break;
+      case 'today':
+        filtered = filtered.filter(r => {
+          const reservationDate = new Date(r.startTime);
+          const reservationDay = new Date(reservationDate.getFullYear(), reservationDate.getMonth(), reservationDate.getDate());
+          return reservationDay.getTime() === today.getTime();
+        });
+        break;
+      case 'lounge':
+        filtered = filtered.filter(r => 
+          r.amenityType === 'lounge' || 
+          (r.amenityName && r.amenityName.toLowerCase().includes('lounge'))
         );
+        break;
+      case 'all':
+      default:
+        // No additional filtering
+        break;
+    }
+
+    // **ENHANCED: Sort by creation date (chronological order) with same-day prioritization**
+    filtered.sort((a, b) => {
+      const dateA = new Date(a.createdAt);
+      const dateB = new Date(b.createdAt);
+      
+      // For same day reservations, show submission order clearly
+      const dayA = new Date(dateA.getFullYear(), dateA.getMonth(), dateA.getDate());
+      const dayB = new Date(dateB.getFullYear(), dateB.getMonth(), dateB.getDate());
+      
+      if (dayA.getTime() === dayB.getTime()) {
+        // Same day - sort by submission time (earliest first)
+        return dateA.getTime() - dateB.getTime();
+      } else {
+        // Different days - most recent day first, but within each day chronological
+        return dateB.getTime() - dateA.getTime();
+      }
+    });
+
+    // **NEW: Add submission order indicators for same-day requests**
+    const enrichedReservations = filtered.map((reservation, index) => {
+      const sameDayReservations = filtered.filter(r => {
+        const rDate = new Date(r.createdAt);
+        const currentDate = new Date(reservation.createdAt);
+        return rDate.getFullYear() === currentDate.getFullYear() &&
+               rDate.getMonth() === currentDate.getMonth() &&
+               rDate.getDate() === currentDate.getDate();
       });
-    }
 
-    // Apply status filter
-    if (selectedFilter !== 'all') {
-      filtered = filtered.filter(reservation => reservation.status === selectedFilter);
-    }
+      if (sameDayReservations.length > 1) {
+        // Find the order within the same day
+        const dayIndex = sameDayReservations.findIndex(r => r.id === reservation.id);
+        return {
+          ...reservation,
+          submissionOrder: dayIndex + 1,
+          totalSameDayRequests: sameDayReservations.length,
+          isFirstOfDay: dayIndex === 0,
+          isMultipleRequestDay: true
+        };
+      } else {
+        return {
+          ...reservation,
+          isMultipleRequestDay: false
+        };
+      }
+    });
 
-    setFilteredReservations(filtered);
-    console.log(`🔍 Filtered ${filtered.length} reservations out of ${reservations.length} total`);
-  };
-
-  const handleRefresh = async () => {
-    setRefreshing(true);
-    await fetchReservations();
-    setRefreshing(false);
-  };
-
-  // FIXED: Get translated status text
-  const getStatusText = (status) => {
-    const statusConfig = RESERVATION_STATUSES[status];
-    if (!statusConfig) return status;
-    
-    return t(statusConfig.labelKey) || Localization.translateStatus(status, language);
-  };
-
-  // FIXED: Get translated amenity name
-  const getTranslatedAmenityName = (amenityName) => {
-    return Localization.translateAmenity(amenityName, language);
+    setFilteredReservations(enrichedReservations);
   };
 
   const handleApproveReservation = async (reservation) => {
-    try {
-      await apiClient.post(`/api/reservations/${reservation.id}/approve`);
-      setReservations(prev =>
-        prev.map(r => (r.id === reservation.id ? { ...r, status: 'approved' } : r))
-      );
-      Alert.alert(
-        t('success') || 'Success',
-        language === 'es'
-          ? 'Reserva aprobada exitosamente'
-          : 'Reservation approved successfully'
-      );
-    } catch (error) {
-      console.error('Error approving reservation:', error);
-      const errorMessage = ApiErrorTranslator.extractAndTranslateError(error, language);
-      Alert.alert(t('error') || 'Error', errorMessage);
-    }
-  };
+    if (processingReservations.has(reservation.id)) return;
 
-  const handleRejectReservation = (reservation) => {
-    setSelectedReservation(reservation);
-    setActionModalVisible(true);
-  };
-
-  const confirmReject = async () => {
-    try {
-      await apiClient.post(`/api/reservations/${selectedReservation.id}/reject`, {
-        reason: rejectionReason,
-      });
-      setReservations(prev =>
-        prev.map(r => (r.id === selectedReservation.id ? { ...r, status: 'denied' } : r))
-      );
-      setActionModalVisible(false);
-      setRejectionReason('');
-      setSelectedReservation(null);
-      Alert.alert(
-        t('success') || 'Success',
-        language === 'es'
-          ? 'Reserva rechazada exitosamente'
-          : 'Reservation rejected successfully'
-      );
-    } catch (error) {
-      console.error('Error rejecting reservation:', error);
-      const errorMessage = ApiErrorTranslator.extractAndTranslateError(error, language);
-      Alert.alert(t('error') || 'Error', errorMessage);
-    }
-  };
-
-  const handleCancelReservation = (reservation) => {
     Alert.alert(
-      language === 'es' ? 'Cancelar Reserva' : 'Cancel Reservation',
-      language === 'es'
-        ? '¿Está seguro de que desea cancelar esta reserva?'
-        : 'Are you sure you want to cancel this reservation?',
+      language === 'es' ? 'Confirmar Aprobación' : 'Confirm Approval',
+      language === 'es' 
+        ? `¿Aprobar la reserva de ${reservation.username || 'Usuario'} para ${reservation.amenityName}?`
+        : `Approve reservation for ${reservation.username || 'User'} at ${reservation.amenityName}?`,
       [
-        { text: t('cancel') || 'Cancel', style: 'cancel' },
         {
-          text: language === 'es' ? 'Cancelar Reserva' : 'Cancel Reservation',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await apiClient.post(`/api/reservations/${reservation.id}/cancel`);
-              setReservations(prev =>
-                prev.map(r => (r.id === reservation.id ? { ...r, status: 'cancelled' } : r))
-              );
-              Alert.alert(
-                t('success') || 'Success',
-                language === 'es'
-                  ? 'Reserva cancelada exitosamente'
-                  : 'Reservation cancelled successfully'
-              );
-            } catch (error) {
-              console.error('Error cancelling reservation:', error);
-              const errorMessage = ApiErrorTranslator.extractAndTranslateError(error, language);
-              Alert.alert(t('error') || 'Error', errorMessage);
-            }
-          },
+          text: language === 'es' ? 'Cancelar' : 'Cancel',
+          style: 'cancel'
         },
+        {
+          text: language === 'es' ? 'Aprobar' : 'Approve',
+          onPress: async () => {
+            setProcessingReservations(prev => new Set([...prev, reservation.id]));
+            try {
+              await approveReservation(reservation.id);
+              Alert.alert(
+                language === 'es' ? 'Aprobada' : 'Approved',
+                language === 'es' ? 'Reserva aprobada exitosamente' : 'Reservation approved successfully'
+              );
+              await loadReservations(true);
+            } catch (error) {
+              Alert.alert(
+                t('error') || 'Error',
+                language === 'es' 
+                  ? 'Error al aprobar la reserva'
+                  : 'Error approving reservation'
+              );
+            } finally {
+              setProcessingReservations(prev => {
+                const updated = new Set(prev);
+                updated.delete(reservation.id);
+                return updated;
+              });
+            }
+          }
+        }
       ]
     );
   };
 
+  const handleRejectReservation = async (reservation) => {
+    if (processingReservations.has(reservation.id)) return;
+
+    Alert.alert(
+      language === 'es' ? 'Confirmar Rechazo' : 'Confirm Rejection',
+      language === 'es' 
+        ? `¿Rechazar la reserva de ${reservation.username || 'Usuario'}?`
+        : `Reject reservation for ${reservation.username || 'User'}?`,
+      [
+        {
+          text: language === 'es' ? 'Cancelar' : 'Cancel',
+          style: 'cancel'
+        },
+        {
+          text: language === 'es' ? 'Rechazar' : 'Reject',
+          style: 'destructive',
+          onPress: async () => {
+            setProcessingReservations(prev => new Set([...prev, reservation.id]));
+            try {
+              await denyReservation(reservation.id, 'Rejected by administrator');
+              Alert.alert(
+                language === 'es' ? 'Rechazada' : 'Rejected',
+                language === 'es' ? 'Reserva rechazada' : 'Reservation rejected'
+              );
+              await loadReservations(true);
+            } catch (error) {
+              Alert.alert(
+                t('error') || 'Error',
+                language === 'es' 
+                  ? 'Error al rechazar la reserva'
+                  : 'Error rejecting reservation'
+              );
+            } finally {
+              setProcessingReservations(prev => {
+                const updated = new Set(prev);
+                updated.delete(reservation.id);
+                return updated;
+              });
+            }
+          }
+        }
+      ]
+    );
+  };
+
+  const handleCancelReservation = async (reservation) => {
+    if (processingReservations.has(reservation.id)) return;
+
+    Alert.alert(
+      language === 'es' ? 'Confirmar Cancelación' : 'Confirm Cancellation',
+      language === 'es' 
+        ? `¿Cancelar la reserva de ${reservation.username || 'Usuario'}?`
+        : `Cancel reservation for ${reservation.username || 'User'}?`,
+      [
+        {
+          text: language === 'es' ? 'No' : 'No',
+          style: 'cancel'
+        },
+        {
+          text: language === 'es' ? 'Cancelar Reserva' : 'Cancel Reservation',
+          style: 'destructive',
+          onPress: async () => {
+            setProcessingReservations(prev => new Set([...prev, reservation.id]));
+            try {
+              await updateReservationStatus(reservation.id, 'cancelled');
+              Alert.alert(
+                language === 'es' ? 'Cancelada' : 'Cancelled',
+                language === 'es' ? 'Reserva cancelada' : 'Reservation cancelled'
+              );
+              await loadReservations(true);
+            } catch (error) {
+              Alert.alert(
+                t('error') || 'Error',
+                language === 'es' 
+                  ? 'Error al cancelar la reserva'
+                  : 'Error cancelling reservation'
+              );
+            } finally {
+              setProcessingReservations(prev => {
+                const updated = new Set(prev);
+                updated.delete(reservation.id);
+                return updated;
+              });
+            }
+          }
+        }
+      ]
+    );
+  };
+
+  const getStatusColor = (status) => {
+    switch (status) {
+      case 'pending': return COLORS.warning;
+      case 'approved': return COLORS.success;
+      case 'denied': return COLORS.error;
+      case 'cancelled': return COLORS.text.secondary;
+      default: return COLORS.primary;
+    }
+  };
+
+  const getStatusLabel = (status) => {
+    const labels = {
+      pending: language === 'es' ? 'Pendiente' : 'Pending',
+      approved: language === 'es' ? 'Aprobada' : 'Approved',
+      denied: language === 'es' ? 'Rechazada' : 'Denied',
+      cancelled: language === 'es' ? 'Cancelada' : 'Cancelled',
+    };
+    return labels[status] || status;
+  };
+
   const renderReservationItem = ({ item }) => {
-    // FIXED: Use enhanced apartment extraction
-    const apartmentNumber = ValidationUtils.getApartmentFromReservation(item);
-    const statusConfig = RESERVATION_STATUSES[item.status] || {};
-    const translatedAmenityName = getTranslatedAmenityName(item.amenityName);
+    const isLounge = item.amenityType === 'lounge' || 
+                    (item.amenityName && item.amenityName.toLowerCase().includes('lounge'));
+    const isProcessing = processingReservations.has(item.id);
 
     return (
-      <Card style={styles.reservationCard}>
+      <Card style={[
+        styles.reservationCard,
+        isLounge && styles.loungeCard,
+        item.isFirstOfDay && styles.firstRequestCard
+      ]}>
+        {/* **NEW: Submission order indicator for same-day multiple requests** */}
+        {item.isMultipleRequestDay && (
+          <View style={[
+            styles.submissionOrderBadge,
+            item.isFirstOfDay && styles.firstSubmissionBadge
+          ]}>
+            <Icon 
+              name={item.isFirstOfDay ? 'flag' : 'schedule'} 
+              size={12} 
+              color={COLORS.white} 
+            />
+            <Text style={styles.submissionOrderText}>
+              {item.isFirstOfDay 
+                ? (language === 'es' ? '1° ENVIADA' : '1ST SUBMITTED')
+                : `${item.submissionOrder}/${item.totalSameDayRequests}`
+              }
+            </Text>
+          </View>
+        )}
+
+        {/* User and Amenity Info */}
         <View style={styles.reservationHeader}>
           <View style={styles.userInfo}>
-            <Icon name="home" size={20} color={COLORS.primary} />
-            <Text style={styles.userName}>{apartmentNumber}</Text>
+            <Icon name="person" size={18} color={COLORS.primary} />
+            <Text style={styles.username}>{item.username || 'Unknown User'}</Text>
           </View>
           
-          <View style={[styles.statusBadge, { backgroundColor: statusConfig.color + '20' }]}>
-            <Icon 
-              name={statusConfig.icon || 'help'} 
-              size={16} 
-              color={statusConfig.color || COLORS.text.secondary} 
-            />
-            <Text style={[styles.statusText, { color: statusConfig.color || COLORS.text.secondary }]}>
-              {getStatusText(item.status)}
-            </Text>
+          <View style={[styles.statusBadge, { backgroundColor: getStatusColor(item.status) }]}>
+            <Text style={styles.statusText}>{getStatusLabel(item.status)}</Text>
           </View>
         </View>
 
         <View style={styles.amenityInfo}>
-          <Text style={styles.amenityName}>{translatedAmenityName}</Text>
+          <Icon name={isLounge ? 'weekend' : 'place'} size={20} color={COLORS.text.primary} />
+          <Text style={styles.amenityName}>{item.amenityName}</Text>
+          {isLounge && (
+            <View style={styles.loungeIndicator}>
+              <Text style={styles.loungeText}>
+                {language === 'es' ? 'SALÓN' : 'LOUNGE'}
+              </Text>
+            </View>
+          )}
         </View>
 
+        {/* Reservation Details */}
         <View style={styles.reservationDetails}>
           <View style={styles.detailRow}>
             <Icon name="event" size={16} color={COLORS.text.secondary} />
@@ -351,61 +393,81 @@ const ReservationManagementScreen = ({ navigation }) => {
             </Text>
           </View>
 
-          {item.specialRequests?.visitorCount > 0 && (
+          {/* Lounge-specific details */}
+          {isLounge && item.visitorCount > 0 && (
             <View style={styles.detailRow}>
               <Icon name="people" size={16} color={COLORS.text.secondary} />
               <Text style={styles.detailText}>
-                {item.specialRequests.visitorCount} {
-                  item.specialRequests.visitorCount === 1 
-                    ? t('visitor') || (language === 'es' ? 'visitante' : 'visitor')
-                    : t('visitors') || (language === 'es' ? 'visitantes' : 'visitors')
+                {item.visitorCount} {
+                  item.visitorCount === 1 
+                    ? (language === 'es' ? 'visitante' : 'visitor')
+                    : (language === 'es' ? 'visitantes' : 'visitors')
                 }
               </Text>
             </View>
           )}
 
-          {item.specialRequests?.notes && (
+          {isLounge && item.willUseGrill && (
             <View style={styles.detailRow}>
-              <Icon name="note" size={16} color={COLORS.text.secondary} />
-              <Text style={styles.detailText}>{item.specialRequests.notes}</Text>
+              <Icon name="outdoor_grill" size={16} color={COLORS.warning} />
+              <Text style={styles.detailText}>
+                {language === 'es' ? 'Usará parrilla' : 'Will use grill'}
+              </Text>
             </View>
           )}
 
-          {/* FIXED: Submitted timestamp with translation */}
+          {item.notes && (
+            <View style={styles.detailRow}>
+              <Icon name="note" size={16} color={COLORS.text.secondary} />
+              <Text style={styles.detailText} numberOfLines={2}>{item.notes}</Text>
+            </View>
+          )}
+
+          {/* **ENHANCED: Submission timestamp with better formatting** */}
           <View style={styles.detailRow}>
             <Icon name="access-time" size={16} color={COLORS.text.secondary} />
             <Text style={styles.submittedText}>
-              {language === 'es' ? 'enviado hace' : 'submitted'} {item.submittedAgo || DateUtils.formatRelativeTime(item.createdAt, language)}
+              {language === 'es' ? 'enviado' : 'submitted'} {DateUtils.formatRelativeTime(item.createdAt, language)}
             </Text>
+            {item.isFirstOfDay && (
+              <Text style={styles.firstSubmissionText}>
+                {language === 'es' ? '• primera del día' : '• first of day'}
+              </Text>
+            )}
           </View>
         </View>
 
-        {/* Action buttons for pending reservations */}
+        {/* Action buttons */}
         {item.status === 'pending' && (
           <View style={styles.actionButtons}>
             <Button
-              title={t('approve') || (language === 'es' ? 'Aprobar' : 'Approve')}
+              title={language === 'es' ? 'Aprobar' : 'Approve'}
               onPress={() => handleApproveReservation(item)}
               style={styles.approveButton}
               variant="success"
+              loading={isProcessing}
+              disabled={isProcessing}
             />
             <Button
-              title={t('deny') || (language === 'es' ? 'Rechazar' : 'Reject')}
+              title={language === 'es' ? 'Rechazar' : 'Reject'}
               onPress={() => handleRejectReservation(item)}
               style={styles.rejectButton}
               variant="danger"
+              loading={isProcessing}
+              disabled={isProcessing}
             />
           </View>
         )}
 
-        {/* Cancel button for approved reservations */}
         {item.status === 'approved' && (
           <View style={styles.actionButtons}>
             <Button
-              title={t('cancel') || (language === 'es' ? 'Cancelar' : 'Cancel')}
+              title={language === 'es' ? 'Cancelar' : 'Cancel'}
               onPress={() => handleCancelReservation(item)}
               style={styles.cancelButton}
-              variant="outline"
+              variant="secondary"
+              loading={isProcessing}
+              disabled={isProcessing}
             />
           </View>
         )}
@@ -413,172 +475,85 @@ const ReservationManagementScreen = ({ navigation }) => {
     );
   };
 
-  const renderEmptyState = () => (
-    <View style={styles.emptyState}>
-      <Icon name="event-note" size={64} color={COLORS.text.secondary} />
-      <Text style={styles.emptyTitle}>
-        {language === 'es' ? 'No hay Reservas' : 'No Reservations'}
-      </Text>
-      <Text style={styles.emptyText}>
-        {searchQuery || selectedFilter !== 'all'
-          ? (language === 'es' 
-              ? 'No hay reservas que coincidan con los filtros actuales.'
-              : 'No reservations match the current filters.')
-          : (language === 'es' 
-              ? 'No hay reservas en este momento.'
-              : 'There are no reservations at the moment.')
-        }
-      </Text>
-    </View>
-  );
-
-  const filterOptions = [
-    { key: 'all', label: t('all') || (language === 'es' ? 'Todas' : 'All') },
-    { key: 'pending', label: t('pending') || (language === 'es' ? 'Pendientes' : 'Pending') },
-    { key: 'approved', label: t('approved') || (language === 'es' ? 'Aprobadas' : 'Approved') },
-    { key: 'denied', label: t('denied') || (language === 'es' ? 'Rechazadas' : 'Rejected') },
-    { key: 'cancelled', label: t('cancelled') || (language === 'es' ? 'Canceladas' : 'Cancelled') },
-    { key: 'completed', label: t('completed') || (language === 'es' ? 'Completadas' : 'Completed') },
-  ];
-
-  if (loading) {
+  if (loading && filteredReservations.length === 0) {
     return (
       <View style={styles.loadingContainer}>
-        <LoadingSpinner 
-          message={language === 'es' ? 'Cargando reservas...' : 'Loading reservations...'} 
-        />
+        <LoadingSpinner />
+        <Text style={styles.loadingText}>
+          {language === 'es' ? 'Cargando reservas...' : 'Loading reservations...'}
+        </Text>
       </View>
     );
   }
 
   return (
     <View style={styles.container}>
-      {/* Search and Filters */}
-      <View style={styles.searchContainer}>
-        <Input
-          placeholder={language === 'es' ? 'Buscar por apartamento, amenidad o ID...' : 'Search by apartment, amenity, or ID...'}
-          value={searchQuery}
-          onChangeText={setSearchQuery}
-          leftIcon="search"
-          style={styles.searchInput}
-        />
-        
-        <View style={styles.filtersContainer}>
-          {filterOptions.map((filter) => (
-            <TouchableOpacity
-              key={filter.key}
-              style={[
-                styles.filterButton,
-                selectedFilter === filter.key && styles.activeFilterButton,
-              ]}
-              onPress={() => setSelectedFilter(filter.key)}
-            >
-              <Text
-                style={[
-                  styles.filterText,
-                  selectedFilter === filter.key && styles.activeFilterText,
-                ]}
-              >
-                {filter.label}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-      </View>
-
-      {/* Stats */}
-      <View style={styles.statsContainer}>
-        <Card style={styles.statCard}>
-          <Text style={styles.statNumber}>
-            {reservations.filter(r => r.status === 'pending').length}
-          </Text>
-          <Text style={styles.statLabel}>
-            {language === 'es' ? 'Pendientes' : 'Pending'}
-          </Text>
-        </Card>
-        
-        <Card style={styles.statCard}>
-          <Text style={styles.statNumber}>
-            {reservations.filter(r => r.status === 'approved').length}
-          </Text>
-          <Text style={styles.statLabel}>
-            {language === 'es' ? 'Aprobadas' : 'Approved'}
-          </Text>
-        </Card>
-        
-        <Card style={styles.statCard}>
-          <Text style={styles.statNumber}>{reservations.length}</Text>
-          <Text style={styles.statLabel}>
-            {language === 'es' ? 'Total' : 'Total'}
-          </Text>
-        </Card>
+      {/* Filter Tabs */}
+      <View style={styles.filterContainer}>
+        {filterOptions.map(filter => (
+          <TouchableOpacity
+            key={filter.key}
+            style={[
+              styles.filterTab,
+              selectedFilter === filter.key && { backgroundColor: filter.color }
+            ]}
+            onPress={() => setSelectedFilter(filter.key)}
+          >
+            <Text style={[
+              styles.filterText,
+              selectedFilter === filter.key && styles.activeFilterText
+            ]}>
+              {filter.label}
+            </Text>
+            {/* Show count for pending requests */}
+            {filter.key === 'pending' && (
+              <View style={styles.countBadge}>
+                <Text style={styles.countText}>
+                  {allReservations?.filter(r => r.status === 'pending').length || 0}
+                </Text>
+              </View>
+            )}
+          </TouchableOpacity>
+        ))}
       </View>
 
       {/* Reservations List */}
       <FlatList
         data={filteredReservations}
-        renderItem={renderReservationItem}
         keyExtractor={(item) => item.id}
+        renderItem={renderReservationItem}
         contentContainerStyle={styles.listContainer}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={COLORS.primary}
+          />
         }
-        ListEmptyComponent={renderEmptyState}
+        ListEmptyComponent={
+          <View style={styles.emptyContainer}>
+            <Icon name="event_note" size={64} color={COLORS.text.secondary} />
+            <Text style={styles.emptyText}>
+              {language === 'es' ? 'No hay reservas para mostrar' : 'No reservations to show'}
+            </Text>
+            {selectedFilter === 'pending' && (
+              <Text style={styles.emptySubtext}>
+                {language === 'es' 
+                  ? 'Las nuevas solicitudes aparecerán aquí'
+                  : 'New requests will appear here'
+                }
+              </Text>
+            )}
+          </View>
+        }
         showsVerticalScrollIndicator={false}
       />
 
-      {/* Rejection Modal */}
-      <Modal
-        visible={actionModalVisible}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setActionModalVisible(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContainer}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>
-                {language === 'es' ? 'Rechazar Reserva' : 'Reject Reservation'}
-              </Text>
-              <TouchableOpacity
-                onPress={() => setActionModalVisible(false)}
-                style={styles.modalCloseButton}
-              >
-                <Icon name="close" size={24} color={COLORS.text.secondary} />
-              </TouchableOpacity>
-            </View>
-            
-            <Text style={styles.modalSubtitle}>
-              {language === 'es' 
-                ? 'Por favor proporcione una razón para el rechazo:'
-                : 'Please provide a reason for rejection:'}
-            </Text>
-            
-            <Input
-              placeholder={language === 'es' ? 'Razón del rechazo...' : 'Rejection reason...'}
-              value={rejectionReason}
-              onChangeText={setRejectionReason}
-              multiline
-              style={styles.reasonInput}
-            />
-            
-            <View style={styles.modalActions}>
-              <Button
-                title={t('cancel') || (language === 'es' ? 'Cancelar' : 'Cancel')}
-                variant="outline"
-                onPress={() => setActionModalVisible(false)}
-                style={styles.modalButton}
-              />
-              <Button
-                title={t('reject') || (language === 'es' ? 'Rechazar' : 'Reject')}
-                variant="danger"
-                onPress={confirmReject}
-                style={styles.modalButton}
-              />
-            </View>
-          </View>
+      {error && (
+        <View style={styles.errorContainer}>
+          <Text style={styles.errorText}>{error}</Text>
         </View>
-      </Modal>
+      )}
     </View>
   );
 };
@@ -594,63 +569,91 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: COLORS.background,
   },
-  searchContainer: {
-    padding: SPACING.md,
-    backgroundColor: COLORS.surface,
+  loadingText: {
+    marginTop: SPACING.md,
+    fontSize: FONT_SIZES.md,
+    color: COLORS.text.secondary,
   },
-  searchInput: {
-    marginBottom: SPACING.sm,
-  },
-  filtersContainer: {
+  filterContainer: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.sm,
+    backgroundColor: COLORS.surface,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border?.light || '#E0E0E0',
   },
-  filterButton: {
-    paddingHorizontal: SPACING.sm,
-    paddingVertical: SPACING.xs,
-    borderRadius: 20,
-    backgroundColor: COLORS.background,
-    marginRight: SPACING.xs,
-    marginBottom: SPACING.xs,
-  },
-  activeFilterButton: {
-    backgroundColor: COLORS.primary,
+  filterTab: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: SPACING.sm,
+    paddingHorizontal: SPACING.xs,
+    borderRadius: 8,
+    marginHorizontal: 2,
+    position: 'relative',
   },
   filterText: {
     fontSize: FONT_SIZES.sm,
     color: COLORS.text.secondary,
-    fontWeight: '600',
+    fontWeight: '500',
   },
   activeFilterText: {
-    color: COLORS.text.inverse,
-  },
-  statsContainer: {
-    flexDirection: 'row',
-    padding: SPACING.md,
-    paddingBottom: SPACING.sm,
-  },
-  statCard: {
-    flex: 1,
-    alignItems: 'center',
-    marginHorizontal: SPACING.xs,
-    padding: SPACING.sm,
-  },
-  statNumber: {
-    fontSize: FONT_SIZES.xl,
+    color: COLORS.white,
     fontWeight: 'bold',
-    color: COLORS.text.primary,
   },
-  statLabel: {
+  countBadge: {
+    position: 'absolute',
+    top: -4,
+    right: -4,
+    backgroundColor: COLORS.error,
+    borderRadius: 10,
+    minWidth: 20,
+    height: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  countText: {
     fontSize: FONT_SIZES.xs,
-    color: COLORS.text.secondary,
-    marginTop: SPACING.xs / 2,
+    color: COLORS.white,
+    fontWeight: 'bold',
   },
   listContainer: {
     padding: SPACING.md,
-    flexGrow: 1,
   },
   reservationCard: {
     marginBottom: SPACING.md,
+    position: 'relative',
+  },
+  loungeCard: {
+    borderLeftWidth: 4,
+    borderLeftColor: COLORS.accent,
+  },
+  firstRequestCard: {
+    shadowColor: COLORS.success,
+    shadowOpacity: 0.1,
+    elevation: 8,
+  },
+  submissionOrderBadge: {
+    position: 'absolute',
+    top: SPACING.sm,
+    right: SPACING.sm,
+    backgroundColor: COLORS.primary,
+    paddingHorizontal: SPACING.xs,
+    paddingVertical: 2,
+    borderRadius: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    zIndex: 1,
+  },
+  firstSubmissionBadge: {
+    backgroundColor: COLORS.success,
+  },
+  submissionOrderText: {
+    fontSize: FONT_SIZES.xs,
+    color: COLORS.white,
+    fontWeight: 'bold',
+    marginLeft: 2,
   },
   reservationHeader: {
     flexDirection: 'row',
@@ -662,34 +665,47 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
   },
-  userName: {
+  username: {
     fontSize: FONT_SIZES.md,
-    fontWeight: '600',
+    fontWeight: 'bold',
     color: COLORS.text.primary,
     marginLeft: SPACING.xs,
   },
   statusBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
     paddingHorizontal: SPACING.sm,
-    paddingVertical: SPACING.xs,
+    paddingVertical: 4,
     borderRadius: 12,
   },
   statusText: {
     fontSize: FONT_SIZES.xs,
-    fontWeight: '600',
-    marginLeft: SPACING.xs / 2,
+    color: COLORS.white,
+    fontWeight: 'bold',
   },
   amenityInfo: {
-    marginBottom: SPACING.sm,
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: SPACING.md,
   },
   amenityName: {
     fontSize: FONT_SIZES.lg,
     fontWeight: 'bold',
     color: COLORS.text.primary,
+    marginLeft: SPACING.sm,
+    flex: 1,
+  },
+  loungeIndicator: {
+    backgroundColor: COLORS.accent,
+    paddingHorizontal: SPACING.xs,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  loungeText: {
+    fontSize: FONT_SIZES.xs,
+    color: COLORS.white,
+    fontWeight: 'bold',
   },
   reservationDetails: {
-    marginBottom: SPACING.sm,
+    marginBottom: SPACING.md,
   },
   detailRow: {
     flexDirection: 'row',
@@ -709,84 +725,57 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   submittedText: {
-    fontSize: FONT_SIZES.xs,
+    fontSize: FONT_SIZES.sm,
     color: COLORS.text.secondary,
     marginLeft: SPACING.xs,
     fontStyle: 'italic',
   },
+  firstSubmissionText: {
+    fontSize: FONT_SIZES.xs,
+    color: COLORS.success,
+    fontWeight: 'bold',
+    marginLeft: SPACING.sm,
+  },
   actionButtons: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginTop: SPACING.sm,
+    gap: SPACING.sm,
   },
   approveButton: {
-    flex: 0.48,
+    flex: 1,
   },
   rejectButton: {
-    flex: 0.48,
+    flex: 1,
   },
   cancelButton: {
     flex: 1,
   },
-  emptyState: {
+  emptyContainer: {
     alignItems: 'center',
-    padding: SPACING.xl,
-  },
-  emptyTitle: {
-    fontSize: FONT_SIZES.xl,
-    fontWeight: 'bold',
-    color: COLORS.text.primary,
-    marginTop: SPACING.md,
-    marginBottom: SPACING.xs,
+    paddingVertical: SPACING.xxl,
   },
   emptyText: {
-    fontSize: FONT_SIZES.md,
-    color: COLORS.text.secondary,
-    textAlign: 'center',
-    lineHeight: 22,
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  modalContainer: {
-    backgroundColor: COLORS.surface,
-    borderRadius: 12,
-    padding: SPACING.lg,
-    margin: SPACING.lg,
-    width: '90%',
-    maxWidth: 400,
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: SPACING.md,
-  },
-  modalTitle: {
     fontSize: FONT_SIZES.lg,
-    fontWeight: 'bold',
-    color: COLORS.text.primary,
-  },
-  modalCloseButton: {
-    padding: SPACING.xs,
-  },
-  modalSubtitle: {
-    fontSize: FONT_SIZES.md,
     color: COLORS.text.secondary,
-    marginBottom: SPACING.md,
+    marginTop: SPACING.md,
+    textAlign: 'center',
   },
-  reasonInput: {
-    marginBottom: SPACING.lg,
+  emptySubtext: {
+    fontSize: FONT_SIZES.sm,
+    color: COLORS.text.secondary,
+    marginTop: SPACING.sm,
+    textAlign: 'center',
   },
-  modalActions: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+  errorContainer: {
+    padding: SPACING.md,
+    backgroundColor: COLORS.background?.error || '#FFEBEE',
+    margin: SPACING.md,
+    borderRadius: 8,
   },
-  modalButton: {
-    flex: 0.48,
+  errorText: {
+    color: COLORS.error,
+    fontSize: FONT_SIZES.sm,
+    textAlign: 'center',
   },
 });
 

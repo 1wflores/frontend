@@ -1,4 +1,4 @@
-// src/screens/booking/AmenityBookingScreen.jsx - IMPROVED LOUNGE BOOKING
+// src/screens/booking/AmenityBookingScreen.jsx - ENHANCED with consecutive weekend validation
 
 import React, { useState, useEffect } from 'react';
 import {
@@ -40,7 +40,7 @@ const AmenityBookingScreen = ({ route, navigation }) => {
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [notes, setNotes] = useState('');
   
-  // NEW: Improved time selection for lounge
+  // Time selection
   const [selectedStartTime, setSelectedStartTime] = useState(null);
   const [selectedEndTime, setSelectedEndTime] = useState(null);
   const [availableStartTimes, setAvailableStartTimes] = useState([]);
@@ -51,6 +51,11 @@ const AmenityBookingScreen = ({ route, navigation }) => {
   const [visitorCount, setVisitorCount] = useState('1');
   const [willUseGrill, setWillUseGrill] = useState(false);
   const [isLounge, setIsLounge] = useState(false);
+
+  // NEW: Validation and warning states
+  const [validationWarnings, setValidationWarnings] = useState([]);
+  const [consecutiveBookingWarning, setConsecutiveBookingWarning] = useState(null);
+  const [existingBookings, setExistingBookings] = useState([]);
 
   // Load amenity details on component mount
   useEffect(() => {
@@ -63,6 +68,7 @@ const AmenityBookingScreen = ({ route, navigation }) => {
   useEffect(() => {
     if (amenity && selectedDate) {
       loadAvailableStartTimes();
+      checkForExistingBookings(); // NEW: Check for existing bookings
     }
   }, [selectedDate, amenity]);
 
@@ -75,6 +81,15 @@ const AmenityBookingScreen = ({ route, navigation }) => {
       setSelectedEndTime(null);
     }
   }, [selectedStartTime, amenity]);
+
+  // NEW: Validate consecutive booking when date/time changes
+  useEffect(() => {
+    if (isLounge && selectedDate && selectedStartTime) {
+      validateConsecutiveBooking();
+    } else {
+      setConsecutiveBookingWarning(null);
+    }
+  }, [selectedDate, selectedStartTime, isLounge, existingBookings]);
 
   const loadAmenityDetails = async () => {
     try {
@@ -110,7 +125,115 @@ const AmenityBookingScreen = ({ route, navigation }) => {
       setLoading(false);
     }
   };
-  
+
+  // NEW: Check for existing bookings to validate consecutive restrictions
+  const checkForExistingBookings = async () => {
+    if (!isLounge || !user?.id) return;
+
+    try {
+      console.log('🔍 Checking existing bookings for consecutive validation...');
+      
+      // Get user's existing lounge reservations
+      const userReservations = await reservationService.getUserReservations({
+        userId: user.id,
+        amenityId,
+        status: ['pending', 'approved', 'confirmed'],
+        includePastReservations: false
+      });
+
+      setExistingBookings(userReservations || []);
+      console.log(`📋 Found ${userReservations?.length || 0} existing bookings`);
+      
+    } catch (error) {
+      console.error('❌ Error checking existing bookings:', error);
+      // Don't block the user, just log the error
+    }
+  };
+
+  // NEW: Validate consecutive weekend booking restrictions
+  const validateConsecutiveBooking = () => {
+    if (!isLounge || !selectedDate || existingBookings.length === 0) {
+      setConsecutiveBookingWarning(null);
+      return;
+    }
+
+    const newBookingDate = new Date(selectedDate);
+    const isNewBookingWeekend = isWeekendDay(newBookingDate);
+
+    if (!isNewBookingWeekend) {
+      setConsecutiveBookingWarning(null);
+      return;
+    }
+
+    // Check each existing booking for consecutive conflicts
+    for (const booking of existingBookings) {
+      const existingDate = new Date(booking.startTime);
+      
+      if (!isWeekendDay(existingDate)) continue;
+      
+      if (areConsecutiveWeekendDays(newBookingDate, existingDate)) {
+        const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+        const existingDayName = dayNames[existingDate.getDay()];
+        const newDayName = dayNames[newBookingDate.getDay()];
+        
+        setConsecutiveBookingWarning({
+          message: language === 'es' 
+            ? `Ya tienes una reserva el ${existingDayName}. No se permiten reservas consecutivas en días de fin de semana.`
+            : `You already have a reservation on ${existingDayName}. Consecutive weekend bookings are not allowed.`,
+          details: {
+            existingDate: existingDate.toDateString(),
+            existingDay: existingDayName,
+            newDay: newDayName,
+            conflictType: getConsecutiveConflictType(existingDate, newBookingDate)
+          }
+        });
+        return;
+      }
+    }
+    
+    setConsecutiveBookingWarning(null);
+  };
+
+  // Helper functions for consecutive booking validation
+  const isWeekendDay = (date) => {
+    const dayOfWeek = date.getDay();
+    return dayOfWeek === 0 || dayOfWeek === 5 || dayOfWeek === 6; // Sunday, Friday, Saturday
+  };
+
+  const areConsecutiveWeekendDays = (date1, date2) => {
+    const d1 = new Date(date1.getFullYear(), date1.getMonth(), date1.getDate());
+    const d2 = new Date(date2.getFullYear(), date2.getMonth(), date2.getDate());
+    
+    const dayOfWeek1 = d1.getDay();
+    const dayOfWeek2 = d2.getDay();
+    
+    const timeDiff = Math.abs(d1.getTime() - d2.getTime());
+    const daysDiff = timeDiff / (24 * 60 * 60 * 1000);
+    
+    // Check for consecutive combinations
+    if (daysDiff === 1) {
+      return (dayOfWeek1 === 5 && dayOfWeek2 === 6) || 
+             (dayOfWeek1 === 6 && dayOfWeek2 === 5) ||
+             (dayOfWeek1 === 6 && dayOfWeek2 === 0) ||
+             (dayOfWeek1 === 0 && dayOfWeek2 === 6);
+    } else if (daysDiff === 2) {
+      return (dayOfWeek1 === 5 && dayOfWeek2 === 0) || 
+             (dayOfWeek1 === 0 && dayOfWeek2 === 5);
+    }
+    
+    return false;
+  };
+
+  const getConsecutiveConflictType = (date1, date2) => {
+    const day1 = date1.getDay();
+    const day2 = date2.getDay();
+    
+    if ((day1 === 5 && day2 === 6) || (day1 === 6 && day2 === 5)) return 'Friday-Saturday';
+    if ((day1 === 6 && day2 === 0) || (day1 === 0 && day2 === 6)) return 'Saturday-Sunday';
+    if ((day1 === 5 && day2 === 0) || (day1 === 0 && day2 === 5)) return 'Friday-Sunday';
+    return 'Weekend consecutive';
+  };
+
   const loadAvailableStartTimes = async () => {
     if (!amenity || !amenityId) {
       console.log('⚠️ Skipping time loading - missing amenity or amenityId');
@@ -122,9 +245,6 @@ const AmenityBookingScreen = ({ route, navigation }) => {
       console.log('🕐 Loading available start times...');
       
       const formattedDate = DateUtils.formatDate(selectedDate, 'YYYY-MM-DD');
-      
-      // For lounge, we need to get all possible start times
-      // We'll generate 30-minute intervals and check availability
       const startTimes = await generateAvailableStartTimes(formattedDate);
       
       console.log('✅ Available start times:', startTimes);
@@ -144,85 +264,63 @@ const AmenityBookingScreen = ({ route, navigation }) => {
 
   const generateAvailableStartTimes = async (date) => {
     try {
-      // Get operating hours for the amenity
       const operatingHours = amenity.operatingHours || { start: '08:00', end: '23:00' };
       const [startHour, startMinute] = operatingHours.start.split(':').map(Number);
       const [endHour, endMinute] = operatingHours.end.split(':').map(Number);
       
-      console.log(`🏢 Operating hours: ${startHour}:${startMinute.toString().padStart(2, '0')} - ${endHour}:${endMinute.toString().padStart(2, '0')}`);
+      let maxDurationMinutes = amenity.maxDuration || 
+                               amenity.maxDurationMinutes || 
+                               amenity.autoApprovalRules?.maxDurationMinutes ||
+                               (isLounge ? 240 : 60);
       
-      // Get existing reservations for this date
-      const existingReservations = await getExistingReservations(date);
+      maxDurationMinutes = parseInt(maxDurationMinutes);
+      const minDurationMinutes = 30;
+
+      // Get existing reservations for the selected date
+      const existingReservations = await reservationService.getReservationsForDate(amenityId, date);
       
       const startTimes = [];
-      const dateObj = new Date(date);
+      const slotInterval = 30; // 30-minute intervals
       
-      // FIXED: Generate ALL start times during operating hours
-      // Don't limit by max duration here - that's handled in end time selection
-      // We just need to ensure there's at least 30 minutes before closing
-      
-      for (let hour = startHour; hour < endHour; hour++) {
-        for (let minute = 0; minute < 60; minute += 30) {
-          const timeSlot = new Date(dateObj);
-          timeSlot.setHours(hour, minute, 0, 0);
+      // Generate time slots
+      for (let hour = startHour; hour <= endHour; hour++) {
+        for (let minute = 0; minute < 60; minute += slotInterval) {
+          if (hour === endHour && minute > endMinute) break;
           
-          // Make sure this start time allows for at least 30 minutes before closing
-          const minimumEndTime = new Date(timeSlot.getTime() + (30 * 60 * 1000));
-          const operatingEndTime = new Date(dateObj);
-          operatingEndTime.setHours(endHour, endMinute, 0, 0);
+          const slotTime = new Date(date);
+          slotTime.setHours(hour, minute, 0, 0);
           
-          if (minimumEndTime > operatingEndTime) {
-            continue; // Skip if can't fit minimum 30 minutes
-          }
+          // Skip past times
+          if (slotTime <= new Date()) continue;
           
-          // Check if this time slot conflicts with existing reservations
+          // Check if there's enough time left in the day for minimum duration
+          const endOfDay = new Date(date);
+          endOfDay.setHours(endHour, endMinute, 0, 0);
+          
+          const timeUntilClose = (endOfDay - slotTime) / (1000 * 60);
+          if (timeUntilClose < minDurationMinutes) continue;
+          
+          // Check for conflicts with existing reservations
           const hasConflict = existingReservations.some(reservation => {
-            const resStart = new Date(reservation.startTime);
-            const resEnd = new Date(reservation.endTime);
-            return timeSlot >= resStart && timeSlot < resEnd;
+            const existingStart = new Date(reservation.startTime);
+            const existingEnd = new Date(reservation.endTime);
+            
+            // Check if this slot would conflict (assuming minimum duration)
+            const slotEnd = new Date(slotTime.getTime() + (minDurationMinutes * 60 * 1000));
+            
+            return (slotTime < existingEnd && slotEnd > existingStart);
           });
           
           if (!hasConflict) {
             startTimes.push({
-              time: timeSlot,
-              label: DateUtils.formatTime(timeSlot),
-              value: timeSlot.toISOString()
+              time: slotTime.toISOString(),
+              label: DateUtils.formatTime(slotTime)
             });
           }
         }
       }
       
-      // Also check the final hour (e.g., 10:30 PM if closing at 11 PM)
-      if (endMinute > 0) {
-        for (let minute = 0; minute < endMinute; minute += 30) {
-          const timeSlot = new Date(dateObj);
-          timeSlot.setHours(endHour, minute, 0, 0);
-          
-          // Make sure there's at least 30 minutes before closing
-          const minimumEndTime = new Date(timeSlot.getTime() + (30 * 60 * 1000));
-          const operatingEndTime = new Date(dateObj);
-          operatingEndTime.setHours(endHour, endMinute, 0, 0);
-          
-          if (minimumEndTime <= operatingEndTime) {
-            // Check conflicts
-            const hasConflict = existingReservations.some(reservation => {
-              const resStart = new Date(reservation.startTime);
-              const resEnd = new Date(reservation.endTime);
-              return timeSlot >= resStart && timeSlot < resEnd;
-            });
-            
-            if (!hasConflict) {
-              startTimes.push({
-                time: timeSlot,
-                label: DateUtils.formatTime(timeSlot),
-                value: timeSlot.toISOString()
-              });
-            }
-          }
-        }
-      }
-      
-      console.log(`✅ Generated ${startTimes.length} available start times from ${startTimes[0]?.label} to ${startTimes[startTimes.length - 1]?.label}`);
+      console.log(`✅ Generated ${startTimes.length} available start times`);
       return startTimes;
     } catch (error) {
       console.error('Error generating start times:', error);
@@ -240,544 +338,500 @@ const AmenityBookingScreen = ({ route, navigation }) => {
       const operatingHours = amenity.operatingHours || { start: '08:00', end: '23:00' };
       const [endHour, endMinute] = operatingHours.end.split(':').map(Number);
       
-      // Create the operating end time for this date
       const operatingEndTime = new Date(startTime);
       operatingEndTime.setHours(endHour, endMinute, 0, 0);
       
       const endTimes = [];
       
-      // FIXED: Use proper maxDuration with fallback to 900 for lounge
       let maxDurationMinutes = amenity.maxDuration || 
                                amenity.maxDurationMinutes || 
                                amenity.autoApprovalRules?.maxDurationMinutes ||
-                               (isLounge ? 900 : 60); // FIXED: Changed fallback from 240 to 900 for lounge
+                               (isLounge ? 240 : 60);
       
-      // Ensure it's a number
       maxDurationMinutes = parseInt(maxDurationMinutes);
-      
-      const minDurationMinutes = 30; // Minimum 30 minutes
+      const minDurationMinutes = 30;
       
       console.log(`📊 Using maxDuration: ${maxDurationMinutes} minutes (${maxDurationMinutes/60} hours)`);
-      console.log(`🏢 Operating end time: ${DateUtils.formatTime(operatingEndTime)}`);
       
-      // Calculate the latest possible end time based on max duration
       const maxEndTimeByDuration = new Date(startTime.getTime() + (maxDurationMinutes * 60 * 1000));
-      
-      // Use whichever is earlier: operating hours end time or max duration end time
       const actualMaxEndTime = maxEndTimeByDuration < operatingEndTime ? maxEndTimeByDuration : operatingEndTime;
       
-      console.log(`⏰ Actual max end time: ${DateUtils.formatTime(actualMaxEndTime)} (limited by ${maxEndTimeByDuration < operatingEndTime ? 'max duration' : 'operating hours'})`);
-      
-      // Generate end times in 30-minute intervals
-      let currentEndTime = new Date(startTime.getTime() + (minDurationMinutes * 60 * 1000));
-      
-      while (currentEndTime <= actualMaxEndTime) {
-        const duration = (currentEndTime - startTime) / (1000 * 60); // Duration in minutes
-        const durationText = formatDuration(duration);
+      // Generate end time options in 30-minute intervals
+      for (let i = minDurationMinutes; i <= maxDurationMinutes; i += 30) {
+        const endTime = new Date(startTime.getTime() + (i * 60 * 1000));
+        
+        if (endTime > actualMaxEndTime) break;
+        
+        const hours = Math.floor(i / 60);
+        const minutes = i % 60;
+        const durationLabel = minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`;
         
         endTimes.push({
-          time: new Date(currentEndTime),
-          label: DateUtils.formatTime(currentEndTime),
-          value: currentEndTime.toISOString(),
-          duration: duration,
-          durationText: durationText
+          time: endTime.toISOString(),
+          duration: i,
+          label: DateUtils.formatTime(endTime),
+          durationLabel
         });
-        
-        // Move to next 30-minute slot
-        currentEndTime = new Date(currentEndTime.getTime() + (30 * 60 * 1000));
-        
-        // Safety check to prevent infinite loop
-        if (endTimes.length > 100) {
-          console.warn('⚠️ Breaking loop after 100 end times to prevent infinite loop');
-          break;
-        }
       }
       
-      console.log(`✅ Generated ${endTimes.length} available end times`);
+      console.log(`✅ Generated ${endTimes.length} end time options`);
       setAvailableEndTimes(endTimes);
       
     } catch (error) {
-      console.error('❌ Error loading end times:', error);
+      console.error('Error loading end times:', error);
       setAvailableEndTimes([]);
     }
   };
 
-  const getExistingReservations = async (date) => {
-    try {
-      // This would need to be implemented in your reservation service
-      // For now, we'll return empty array
-      // TODO: Implement API call to get existing reservations for the date
-      return [];
-    } catch (error) {
-      console.error('Error getting existing reservations:', error);
-      return [];
-    }
-  };
-
-  const formatDuration = (minutes) => {
-    const hours = Math.floor(minutes / 60);
-    const remainingMinutes = minutes % 60;
-    
-    if (hours === 0) {
-      return `${remainingMinutes}m`;
-    } else if (remainingMinutes === 0) {
-      return `${hours}h`;
-    } else {
-      return `${hours}h ${remainingMinutes}m`;
-    }
-  };
-
-  const handleDateChange = (date) => {
-    console.log('📅 Date changed to:', date);
-    setSelectedDate(date);
-    setSelectedStartTime(null);
-    setSelectedEndTime(null);
-    setShowDatePicker(false);
-  };
-
-  const handleStartTimeSelection = (startTime) => {
-    console.log('🕐 Start time selected:', startTime);
-    setSelectedStartTime(startTime);
-    setSelectedEndTime(null); // Clear end time when start changes
-  };
-
-  const handleEndTimeSelection = (endTime) => {
-    console.log('🕐 End time selected:', endTime);
-    setSelectedEndTime(endTime);
-  };
-
-  const handleNextStep = () => {
-    if (currentStep === 1) {
-      // Validate time selection
-      if (!selectedStartTime) {
-        Alert.alert(
-          t('error') || 'Error',
-          language === 'es' 
-            ? 'Por favor seleccione una hora de inicio'
-            : 'Please select a start time'
-        );
-        return;
-      }
-
-      if (!selectedEndTime) {
-        Alert.alert(
-          t('error') || 'Error',
-          language === 'es' 
-            ? 'Por favor seleccione una hora de fin'
-            : 'Please select an end time'
-        );
-        return;
-      }
-
-      setCurrentStep(2);
-    } else if (currentStep === 2) {
-      handleSubmitReservation();
-    }
-  };
-
-  const handlePreviousStep = () => {
-    if (currentStep > 1) {
-      setCurrentStep(currentStep - 1);
-    }
-  };
-
-  const handleSubmitReservation = async () => {
-    try {
-      console.log('📝 Submitting reservation...', {
-        amenityId,
-        selectedDate,
-        selectedStartTime,
-        selectedEndTime,
-        visitorCount,
-        willUseGrill,
-        notes,
-        isLounge
-      });
-
-      if (!selectedStartTime || !selectedEndTime) {
-        Alert.alert(
-          t('error') || 'Error',
-          language === 'es' 
-            ? 'Por favor seleccione hora de inicio y fin'
-            : 'Please select start and end times'
-        );
-        return;
-      }
-
-      // Validate lounge-specific fields
-      if (isLounge) {
-        const visitorNum = parseInt(visitorCount);
-        const maxCapacity = amenity?.capacity || 20;
-        
-        if (visitorNum < 1 || visitorNum > maxCapacity) {
-          Alert.alert(
-            t('error') || 'Error',
-            language === 'es' 
-              ? `Número de visitantes debe estar entre 1 y ${maxCapacity}`
-              : `Number of visitors must be between 1 and ${maxCapacity}`
-          );
-          return;
-        }
-      }
-
-      // Build reservation data
-      const reservationData = {
-        amenityId,
-        startTime: selectedStartTime.value,
-        endTime: selectedEndTime.value,
-        notes: notes.trim(),
-      };
-
-      // Add lounge-specific fields
-      if (isLounge) {
-        reservationData.visitorCount = parseInt(visitorCount) || 1;
-        reservationData.willUseGrill = willUseGrill;
-      }
-
-      console.log('📤 Final reservation data:', reservationData);
-
-      const result = await createReservation(reservationData);
-      console.log('✅ Reservation created:', result);
-
-      navigation.replace('BookingConfirmation', {
-        reservationId: result.id || result.reservationId,
-        amenityId,
-        amenityName: amenity?.name
-      });
-
-    } catch (error) {
-      console.error('❌ Error creating reservation:', error);
+  const handleSubmitBooking = async () => {
+    if (!selectedStartTime || !selectedEndTime) {
       Alert.alert(
         t('error') || 'Error',
-        error.message || (language === 'es' 
-          ? 'Error al crear la reservación'
-          : 'Error creating reservation')
+        language === 'es' ? 'Por favor selecciona fecha y hora' : 'Please select date and time'
+      );
+      return;
+    }
+
+    // Check for consecutive booking warning
+    if (consecutiveBookingWarning) {
+      Alert.alert(
+        language === 'es' ? 'Reserva No Permitida' : 'Booking Not Allowed',
+        consecutiveBookingWarning.message,
+        [{ text: 'OK' }]
+      );
+      return;
+    }
+
+    // Validate lounge requirements
+    if (isLounge) {
+      const visitorCountNum = parseInt(visitorCount);
+      const maxCapacity = amenity.specialRequirements?.maxVisitors || amenity.capacity || 20;
+      
+      if (isNaN(visitorCountNum) || visitorCountNum < 1 || visitorCountNum > maxCapacity) {
+        Alert.alert(
+          t('error') || 'Error',
+          language === 'es' 
+            ? `El número de visitantes debe estar entre 1 y ${maxCapacity}`
+            : `Visitor count must be between 1 and ${maxCapacity}`
+        );
+        return;
+      }
+
+      // Check advance booking requirement for lounge
+      const bookingTime = new Date(selectedStartTime.time);
+      const now = new Date();
+      const hoursInAdvance = (bookingTime - now) / (1000 * 60 * 60);
+      
+      if (hoursInAdvance < 24) {
+        Alert.alert(
+          language === 'es' ? 'Reserva Anticipada Requerida' : 'Advance Booking Required',
+          language === 'es' 
+            ? 'El Salón Comunitario requiere reserva con 24 horas de anticipación.'
+            : 'The Community Lounge requires 24-hour advance booking.',
+          [{ text: 'OK' }]
+        );
+        return;
+      }
+    }
+
+    try {
+      const reservationData = {
+        amenityId,
+        startTime: selectedStartTime.time,
+        endTime: selectedEndTime.time,
+        notes: notes.trim(),
+        visitorCount: isLounge ? parseInt(visitorCount) : undefined,
+        willUseGrill: isLounge ? willUseGrill : undefined,
+      };
+
+      console.log('📝 Submitting reservation:', reservationData);
+
+      const result = await createReservation(reservationData);
+
+      // Show different messages based on approval status
+      const isLoungeBooking = isLounge;
+      const title = language === 'es' ? 'Reserva Enviada' : 'Booking Submitted';
+      
+      let message;
+      if (isLoungeBooking) {
+        message = language === 'es' 
+          ? 'Tu reserva del Salón Comunitario ha sido enviada para aprobación del administrador. Recibirás una notificación cuando sea procesada.'
+          : 'Your Community Lounge booking has been submitted for administrator approval. You will be notified when it is processed.';
+      } else {
+        message = result?.status === 'approved'
+          ? (language === 'es' ? 'Tu reserva ha sido confirmada automáticamente.' : 'Your booking has been automatically confirmed.')
+          : (language === 'es' ? 'Tu reserva ha sido enviada para aprobación.' : 'Your booking has been submitted for approval.');
+      }
+
+      Alert.alert(
+        title,
+        message,
+        [
+          {
+            text: 'OK',
+            onPress: () => {
+              navigation.navigate('BookingConfirmation', {
+                reservation: result,
+                amenity: amenity
+              });
+            }
+          }
+        ]
+      );
+
+    } catch (error) {
+      console.error('❌ Error submitting booking:', error);
+      
+      let errorMessage = language === 'es' 
+        ? 'Error al crear la reserva'
+        : 'Error creating reservation';
+        
+      if (error.message?.includes('consecutive')) {
+        errorMessage = language === 'es' 
+          ? 'No se permiten reservas consecutivas en días de fin de semana para el Salón Comunitario.'
+          : 'Consecutive weekend bookings are not allowed for the Community Lounge.';
+      }
+      
+      Alert.alert(
+        t('error') || 'Error',
+        errorMessage
       );
     }
   };
 
   const renderDateTimeStep = () => (
-    <ScrollView style={styles.stepContent}>
+    <Card style={styles.stepCard}>
       <Text style={styles.stepTitle}>
-        {language === 'es' ? 'Seleccione Fecha y Hora' : 'Select Date & Time'}
+        {t('selectDateTime') || (language === 'es' ? 'Seleccionar Fecha y Hora' : 'Select Date & Time')}
       </Text>
-
+      
       {/* Date Selection */}
-      <Card style={styles.selectionCard}>
-        <Text style={styles.sectionTitle}>
-          {language === 'es' ? 'Fecha' : 'Date'}
+      <TouchableOpacity 
+        style={styles.dateButton}
+        onPress={() => setShowDatePicker(true)}
+      >
+        <Icon name="event" size={20} color={COLORS.primary} />
+        <Text style={styles.dateButtonText}>
+          {DateUtils.formatDate(selectedDate, language)}
         </Text>
-        <TouchableOpacity
-          style={styles.dateButton}
-          onPress={() => setShowDatePicker(true)}
-        >
-          <Icon name="calendar-today" size={24} color={COLORS.primary} />
-          <Text style={styles.dateButtonText}>
-            {DateUtils.formatDate(selectedDate, language === 'es' ? 'DD/MM/YYYY' : 'MM/DD/YYYY')}
-          </Text>
-          <Icon name="chevron-right" size={24} color={COLORS.text.secondary} />
-        </TouchableOpacity>
-      </Card>
+      </TouchableOpacity>
 
-      {/* Start Time Selection */}
-      <Card style={styles.selectionCard}>
-        <View style={styles.sectionHeader}>
-          <Icon name="schedule" size={20} color={COLORS.primary} />
-          <Text style={styles.sectionTitle}>
-            {language === 'es' ? 'Hora de Inicio' : 'Start Time'}
-          </Text>
-          {loadingTimes && <LoadingSpinner size="small" />}
-        </View>
-        
-        {selectedStartTime && (
-          <View style={styles.selectedTimeContainer}>
-            <Text style={styles.selectedTimeLabel}>
-              {language === 'es' ? 'Seleccionado:' : 'Selected:'}
-            </Text>
-            <Text style={styles.selectedTimeValue}>
-              {selectedStartTime.label}
-            </Text>
-          </View>
-        )}
-        
-        {loadingTimes ? (
-          <View style={styles.loadingContainer}>
-            <Text style={styles.loadingText}>
-              {language === 'es' ? 'Cargando horarios...' : 'Loading times...'}
-            </Text>
-          </View>
-        ) : availableStartTimes.length > 0 ? (
-          <View style={styles.timesGrid}>
-            {availableStartTimes.map((time, index) => (
-              <TouchableOpacity
-                key={index}
-                style={[
-                  styles.timeButton,
-                  selectedStartTime?.value === time.value && styles.selectedTime,
-                ]}
-                onPress={() => handleStartTimeSelection(time)}
-              >
-                <Text
-                  style={[
-                    styles.timeText,
-                    selectedStartTime?.value === time.value && styles.selectedTimeText,
-                  ]}
-                >
-                  {time.label}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        ) : (
-          <View style={styles.noTimesContainer}>
-            <Icon name="schedule" size={48} color={COLORS.text.secondary} />
-            <Text style={styles.noTimesText}>
-              {language === 'es' 
-                ? 'No hay horarios de inicio disponibles'
-                : 'No start times available for this date'}
-            </Text>
-          </View>
-        )}
-      </Card>
-
-      {/* End Time Selection (only show if start time is selected) */}
-      {selectedStartTime && (
-        <Card style={styles.selectionCard}>
-          <View style={styles.sectionHeader}>
-            <Icon name="schedule" size={20} color={COLORS.success} />
-            <Text style={styles.sectionTitle}>
-              {language === 'es' ? 'Hora de Fin' : 'End Time'}
-            </Text>
-          </View>
-          
-          {selectedEndTime && (
-            <View style={styles.selectedTimeContainer}>
-              <Text style={styles.selectedTimeLabel}>
-                {language === 'es' ? 'Seleccionado:' : 'Selected:'}
-              </Text>
-              <Text style={styles.selectedTimeValue}>
-                {selectedEndTime.label} ({selectedEndTime.durationText})
-              </Text>
-            </View>
-          )}
-          
-          {availableEndTimes.length > 0 ? (
-            <View style={styles.timesGrid}>
-              {availableEndTimes.map((time, index) => (
-                <TouchableOpacity
-                  key={index}
-                  style={[
-                    styles.timeButton,
-                    styles.endTimeButton,
-                    selectedEndTime?.value === time.value && styles.selectedEndTime,
-                  ]}
-                  onPress={() => handleEndTimeSelection(time)}
-                >
-                  <Text
-                    style={[
-                      styles.timeText,
-                      selectedEndTime?.value === time.value && styles.selectedEndTimeText,
-                    ]}
-                  >
-                    {time.label}
-                  </Text>
-                  <Text
-                    style={[
-                      styles.durationText,
-                      selectedEndTime?.value === time.value && styles.selectedDurationText,
-                    ]}
-                  >
-                    {time.durationText}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          ) : (
-            <View style={styles.noTimesContainer}>
-              <Text style={styles.noTimesText}>
-                {language === 'es' 
-                  ? 'Seleccione una hora de inicio primero'
-                  : 'Please select a start time first'}
-              </Text>
-            </View>
-          )}
-        </Card>
-      )}
-
-      {/* Time Summary (show when both times selected) */}
-      {selectedStartTime && selectedEndTime && (
-        <Card style={[styles.selectionCard, styles.summaryCard]}>
-          <View style={styles.summaryHeader}>
-            <Icon name="event" size={24} color={COLORS.primary} />
-            <Text style={styles.summaryTitle}>
-              {language === 'es' ? 'Resumen de Reserva' : 'Booking Summary'}
-            </Text>
-          </View>
-          
-          <View style={styles.summaryRow}>
-            <Text style={styles.summaryLabel}>
-              {language === 'es' ? 'Horario:' : 'Time:'}
-            </Text>
-            <Text style={styles.summaryValue}>
-              {selectedStartTime.label} - {selectedEndTime.label}
-            </Text>
-          </View>
-          
-          <View style={styles.summaryRow}>
-            <Text style={styles.summaryLabel}>
-              {language === 'es' ? 'Duración:' : 'Duration:'}
-            </Text>
-            <Text style={styles.summaryValue}>
-              {selectedEndTime.durationText}
-            </Text>
-          </View>
-        </Card>
-      )}
-
-      {/* Date Picker Modal */}
       <DatePicker
         modal
         open={showDatePicker}
         date={selectedDate}
         mode="date"
         minimumDate={new Date()}
-        onConfirm={handleDateChange}
+        onConfirm={(date) => {
+          setShowDatePicker(false);
+          setSelectedDate(date);
+        }}
         onCancel={() => setShowDatePicker(false)}
-        title={language === 'es' ? 'Seleccionar Fecha' : 'Select Date'}
-        confirmText={language === 'es' ? 'Confirmar' : 'Confirm'}
-        cancelText={language === 'es' ? 'Cancelar' : 'Cancel'}
       />
-    </ScrollView>
+
+      {/* Consecutive Booking Warning */}
+      {consecutiveBookingWarning && (
+        <View style={styles.warningCard}>
+          <Icon name="warning" size={20} color={COLORS.warning} />
+          <View style={styles.warningContent}>
+            <Text style={styles.warningTitle}>
+              {language === 'es' ? 'Reserva No Permitida' : 'Booking Not Allowed'}
+            </Text>
+            <Text style={styles.warningMessage}>
+              {consecutiveBookingWarning.message}
+            </Text>
+          </View>
+        </View>
+      )}
+
+      {/* Time Selection */}
+      {!loadingTimes && availableStartTimes.length > 0 && !consecutiveBookingWarning && (
+        <>
+          <Text style={styles.sectionTitle}>
+            {t('startTime') || (language === 'es' ? 'Hora de Inicio' : 'Start Time')}
+          </Text>
+          
+          <ScrollView 
+            horizontal 
+            showsHorizontalScrollIndicator={false}
+            style={styles.timeScrollView}
+          >
+            {availableStartTimes.map((timeSlot, index) => (
+              <TouchableOpacity
+                key={index}
+                style={[
+                  styles.timeSlot,
+                  selectedStartTime?.time === timeSlot.time && styles.selectedTimeSlot
+                ]}
+                onPress={() => setSelectedStartTime(timeSlot)}
+              >
+                <Text style={[
+                  styles.timeSlotText,
+                  selectedStartTime?.time === timeSlot.time && styles.selectedTimeSlotText
+                ]}>
+                  {timeSlot.label}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </>
+      )}
+
+      {/* End Time Selection */}
+      {selectedStartTime && availableEndTimes.length > 0 && !consecutiveBookingWarning && (
+        <>
+          <Text style={styles.sectionTitle}>
+            {t('endTime') || (language === 'es' ? 'Hora de Fin' : 'End Time')}
+          </Text>
+          
+          <ScrollView 
+            horizontal 
+            showsHorizontalScrollIndicator={false}
+            style={styles.timeScrollView}
+          >
+            {availableEndTimes.map((timeSlot, index) => (
+              <TouchableOpacity
+                key={index}
+                style={[
+                  styles.timeSlot,
+                  selectedEndTime?.time === timeSlot.time && styles.selectedTimeSlot
+                ]}
+                onPress={() => setSelectedEndTime(timeSlot)}
+              >
+                <Text style={[
+                  styles.timeSlotText,
+                  selectedEndTime?.time === timeSlot.time && styles.selectedTimeSlotText
+                ]}>
+                  {timeSlot.label}
+                </Text>
+                <Text style={[
+                  styles.durationText,
+                  selectedEndTime?.time === timeSlot.time && styles.selectedDurationText
+                ]}>
+                  {timeSlot.durationLabel}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </>
+      )}
+
+      {loadingTimes && (
+        <View style={styles.loadingContainer}>
+          <LoadingSpinner size="small" />
+          <Text style={styles.loadingText}>
+            {language === 'es' ? 'Cargando horarios...' : 'Loading times...'}
+          </Text>
+        </View>
+      )}
+
+      {!loadingTimes && availableStartTimes.length === 0 && !consecutiveBookingWarning && (
+        <View style={styles.noTimesContainer}>
+          <Icon name="schedule" size={48} color={COLORS.text.secondary} />
+          <Text style={styles.noTimesText}>
+            {language === 'es' 
+              ? 'No hay horarios disponibles para esta fecha'
+              : 'No available times for this date'
+            }
+          </Text>
+        </View>
+      )}
+    </Card>
   );
 
   const renderDetailsStep = () => (
-    <ScrollView style={styles.stepContent}>
+    <Card style={styles.stepCard}>
       <Text style={styles.stepTitle}>
-        {language === 'es' ? 'Detalles de la Reservación' : 'Reservation Details'}
+        {t('additionalDetails') || (language === 'es' ? 'Detalles Adicionales' : 'Additional Details')}
       </Text>
-
-      {/* Reservation Summary */}
-      <Card style={styles.summaryCard}>
-        <View style={styles.summaryRow}>
-          <Icon name="place" size={20} color={COLORS.primary} />
-          <Text style={styles.summaryLabel}>
-            {language === 'es' ? 'Amenidad' : 'Amenity'}
-          </Text>
-          <Text style={styles.summaryValue}>{amenity?.name}</Text>
-        </View>
-        
-        <View style={styles.summaryRow}>
-          <Icon name="calendar-today" size={20} color={COLORS.primary} />
-          <Text style={styles.summaryLabel}>
-            {language === 'es' ? 'Fecha' : 'Date'}
-          </Text>
-          <Text style={styles.summaryValue}>
-            {DateUtils.formatDate(selectedDate, language === 'es' ? 'DD/MM/YYYY' : 'MM/DD/YYYY')}
-          </Text>
-        </View>
-        
-        <View style={styles.summaryRow}>
-          <Icon name="schedule" size={20} color={COLORS.primary} />
-          <Text style={styles.summaryLabel}>
-            {language === 'es' ? 'Hora' : 'Time'}
-          </Text>
-          <Text style={styles.summaryValue}>
-            {selectedStartTime && selectedEndTime ? 
-              `${selectedStartTime.label} - ${selectedEndTime.label}` : '-'}
-          </Text>
-        </View>
-
-        <View style={styles.summaryRow}>
-          <Icon name="timer" size={20} color={COLORS.primary} />
-          <Text style={styles.summaryLabel}>
-            {language === 'es' ? 'Duración' : 'Duration'}
-          </Text>
-          <Text style={styles.summaryValue}>
-            {selectedEndTime?.durationText || '-'}
-          </Text>
-        </View>
-      </Card>
 
       {/* Lounge-specific fields */}
       {isLounge && (
         <>
           {/* Visitor Count */}
-          <Card style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <Icon name="group" size={20} color={COLORS.primary} />
-              <Text style={styles.sectionTitle}>
-                {language === 'es' ? 'Número de Visitantes' : 'Number of Visitors'}
-              </Text>
-            </View>
+          <View style={styles.inputGroup}>
+            <Text style={styles.inputLabel}>
+              {t('numberOfVisitors') || (language === 'es' ? 'Número de Visitantes' : 'Number of Visitors')}
+            </Text>
             <Input
               value={visitorCount}
               onChangeText={setVisitorCount}
-              placeholder={language === 'es' ? 'Ej: 5' : 'e.g. 5'}
+              placeholder="1"
               keyboardType="numeric"
-              maxLength={2}
-              style={styles.visitorInput}
+              style={styles.input}
             />
-            <Text style={styles.fieldNote}>
+            <Text style={styles.inputHelper}>
               {language === 'es' 
-                ? `Máximo ${amenity?.capacity || 20} personas`
-                : `Maximum ${amenity?.capacity || 20} people`}
+                ? `Máximo ${amenity?.specialRequirements?.maxVisitors || amenity?.capacity || 20} personas`
+                : `Maximum ${amenity?.specialRequirements?.maxVisitors || amenity?.capacity || 20} people`
+              }
             </Text>
-          </Card>
+          </View>
 
           {/* Grill Usage */}
-          <Card style={styles.section}>
-            <View style={styles.switchRow}>
+          <View style={styles.inputGroup}>
+            <View style={styles.switchContainer}>
               <View style={styles.switchLabel}>
-                <Icon name="outdoor-grill" size={20} color={COLORS.primary} />
-                <View style={styles.switchTextContainer}>
-                  <Text style={styles.sectionTitle}>
-                    {language === 'es' ? 'Uso de Parrilla' : 'Grill Usage'}
-                  </Text>
-                  <Text style={styles.fieldNote}>
-                    {language === 'es' 
-                      ? 'Se aplican cargos adicionales'
-                      : 'Additional fees apply'}
-                  </Text>
-                </View>
+                <Text style={styles.inputLabel}>
+                  {t('willUseGrill') || (language === 'es' ? 'Usará Parrilla' : 'Will Use Grill')}
+                </Text>
+                <Text style={styles.inputHelper}>
+                  {t('additionalFeesApply') || (language === 'es' ? 'Se aplican tarifas adicionales' : 'Additional fees apply')}
+                </Text>
               </View>
               <Switch
                 value={willUseGrill}
                 onValueChange={setWillUseGrill}
-                trackColor={{ false: COLORS.background.secondary, true: COLORS.primary }}
-                thumbColor={willUseGrill ? COLORS.white : COLORS.text.secondary}
+                trackColor={{ false: COLORS.text.secondary, true: COLORS.primary }}
               />
             </View>
-          </Card>
+          </View>
+
+          {/* Lounge Requirements Notice */}
+          <View style={styles.requirementsNotice}>
+            <Icon name="info" size={20} color={COLORS.primary} />
+            <View style={styles.requirementsContent}>
+              <Text style={styles.requirementsTitle}>
+                {language === 'es' ? 'Requisitos del Salón Comunitario' : 'Community Lounge Requirements'}
+              </Text>
+              <Text style={styles.requirementsText}>
+                • {language === 'es' ? 'Reserva con 24 horas de anticipación' : '24-hour advance booking required'}{'\n'}
+                • {language === 'es' ? 'Requiere aprobación del administrador' : 'Requires administrator approval'}{'\n'}
+                • {language === 'es' ? 'No se permiten reservas consecutivas en fin de semana' : 'No consecutive weekend bookings allowed'}
+              </Text>
+            </View>
+          </View>
         </>
       )}
 
       {/* Notes */}
-      <Card style={styles.section}>
-        <View style={styles.sectionHeader}>
-          <Icon name="notes" size={20} color={COLORS.primary} />
-          <Text style={styles.sectionTitle}>
-            {language === 'es' ? 'Notas Adicionales' : 'Additional Notes'}
-          </Text>
-        </View>
+      <View style={styles.inputGroup}>
+        <Text style={styles.inputLabel}>
+          {t('notes') || (language === 'es' ? 'Notas (Opcional)' : 'Notes (Optional)')}
+        </Text>
         <Input
           value={notes}
           onChangeText={setNotes}
           placeholder={language === 'es' 
-            ? 'Cualquier información adicional...'
-            : 'Any additional information...'}
+            ? 'Agregar cualquier información adicional...'
+            : 'Add any additional information...'
+          }
           multiline
           numberOfLines={3}
-          style={styles.notesInput}
-          maxLength={500}
+          style={[styles.input, styles.notesInput]}
         />
-      </Card>
-    </ScrollView>
+      </View>
+    </Card>
+  );
+
+  const renderConfirmStep = () => (
+    <Card style={styles.stepCard}>
+      <Text style={styles.stepTitle}>
+        {t('confirmReservation') || (language === 'es' ? 'Confirmar Reserva' : 'Confirm Reservation')}
+      </Text>
+
+      <View style={styles.confirmationDetails}>
+        <View style={styles.confirmRow}>
+          <Icon name="place" size={20} color={COLORS.primary} />
+          <Text style={styles.confirmLabel}>
+            {t('amenity') || (language === 'es' ? 'Amenidad:' : 'Amenity:')}
+          </Text>
+          <Text style={styles.confirmValue}>{amenity?.name}</Text>
+        </View>
+
+        <View style={styles.confirmRow}>
+          <Icon name="event" size={20} color={COLORS.primary} />
+          <Text style={styles.confirmLabel}>
+            {t('date') || (language === 'es' ? 'Fecha:' : 'Date:')}
+          </Text>
+          <Text style={styles.confirmValue}>
+            {DateUtils.formatDate(selectedDate, language)}
+          </Text>
+        </View>
+
+        <View style={styles.confirmRow}>
+          <Icon name="schedule" size={20} color={COLORS.primary} />
+          <Text style={styles.confirmLabel}>
+            {t('time') || (language === 'es' ? 'Hora:' : 'Time:')}
+          </Text>
+          <Text style={styles.confirmValue}>
+            {selectedStartTime?.label} - {selectedEndTime?.label}
+          </Text>
+        </View>
+
+        {isLounge && (
+          <>
+            <View style={styles.confirmRow}>
+              <Icon name="people" size={20} color={COLORS.primary} />
+              <Text style={styles.confirmLabel}>
+                {t('visitors') || (language === 'es' ? 'Visitantes:' : 'Visitors:')}
+              </Text>
+              <Text style={styles.confirmValue}>
+                {visitorCount} {visitorCount === '1' 
+                  ? (language === 'es' ? 'persona' : 'person')
+                  : (language === 'es' ? 'personas' : 'people')
+                }
+              </Text>
+            </View>
+
+            {willUseGrill && (
+              <View style={styles.confirmRow}>
+                <Icon name="outdoor_grill" size={20} color={COLORS.warning} />
+                <Text style={styles.confirmLabel}>
+                  {t('grillUsage') || (language === 'es' ? 'Uso de Parrilla:' : 'Grill Usage:')}
+                </Text>
+                <Text style={[styles.confirmValue, { color: COLORS.warning }]}>
+                  {language === 'es' ? 'Sí (tarifas adicionales)' : 'Yes (additional fees)'}
+                </Text>
+              </View>
+            )}
+          </>
+        )}
+
+        {notes.trim() && (
+          <View style={styles.confirmRow}>
+            <Icon name="note" size={20} color={COLORS.primary} />
+            <Text style={styles.confirmLabel}>
+              {t('notes') || (language === 'es' ? 'Notas:' : 'Notes:')}
+            </Text>
+            <Text style={styles.confirmValue}>{notes.trim()}</Text>
+          </View>
+        )}
+      </View>
+
+      {/* Approval Notice */}
+      <View style={[
+        styles.approvalNotice,
+        isLounge ? styles.loungeApprovalNotice : styles.autoApprovalNotice
+      ]}>
+        <Icon 
+          name={isLounge ? "admin_panel_settings" : "check_circle"} 
+          size={20} 
+          color={isLounge ? COLORS.warning : COLORS.success} 
+        />
+        <Text style={[
+          styles.approvalNoticeText,
+          isLounge ? styles.loungeApprovalText : styles.autoApprovalText
+        ]}>
+          {isLounge
+            ? (language === 'es' 
+                ? 'Esta reserva requiere aprobación del administrador'
+                : 'This booking requires administrator approval'
+              )
+            : (language === 'es' 
+                ? 'Esta reserva será aprobada automáticamente'
+                : 'This booking will be approved automatically'
+              )
+          }
+        </Text>
+      </View>
+    </Card>
   );
 
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <LoadingSpinner size="large" />
+        <LoadingSpinner />
         <Text style={styles.loadingText}>
           {language === 'es' ? 'Cargando amenidad...' : 'Loading amenity...'}
         </Text>
@@ -787,53 +841,92 @@ const AmenityBookingScreen = ({ route, navigation }) => {
 
   return (
     <View style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity
-          style={styles.backButton}
-          onPress={() => navigation.goBack()}
-        >
-          <Icon name="arrow-back" size={24} color={COLORS.primary} />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>{amenity?.name}</Text>
-        <View style={styles.placeholder} />
-      </View>
+      <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
+        {/* Header */}
+        <Card style={styles.headerCard}>
+          <View style={styles.amenityHeader}>
+            <Icon 
+              name={isLounge ? 'weekend' : 'place'} 
+              size={32} 
+              color={COLORS.primary} 
+            />
+            <View style={styles.amenityInfo}>
+              <Text style={styles.amenityName}>{amenity?.name}</Text>
+              <Text style={styles.amenityDescription}>{amenity?.description}</Text>
+              {isLounge && (
+                <View style={styles.loungeTag}>
+                  <Text style={styles.loungeTagText}>
+                    {language === 'es' ? 'REQUIERE APROBACIÓN' : 'REQUIRES APPROVAL'}
+                  </Text>
+                </View>
+              )}
+            </View>
+          </View>
+        </Card>
 
-      {/* Progress Indicators */}
-      <View style={styles.progressContainer}>
-        <View style={[styles.progressStep, currentStep >= 1 && styles.activeStep]}>
-          <Text style={[styles.progressNumber, currentStep >= 1 && styles.activeStepText]}>1</Text>
+        {/* Step Indicator */}
+        <View style={styles.stepIndicator}>
+          {[1, 2, 3].map((step) => (
+            <View key={step} style={styles.stepIndicatorContainer}>
+              <View style={[
+                styles.stepDot,
+                currentStep >= step && styles.activeStepDot
+              ]}>
+                <Text style={[
+                  styles.stepDotText,
+                  currentStep >= step && styles.activeStepDotText
+                ]}>
+                  {step}
+                </Text>
+              </View>
+              {step < 3 && <View style={[
+                styles.stepLine,
+                currentStep > step && styles.activeStepLine
+              ]} />}
+            </View>
+          ))}
         </View>
-        <View style={[styles.progressLine, currentStep > 1 && styles.activeProgressLine]} />
-        <View style={[styles.progressStep, currentStep >= 2 && styles.activeStep]}>
-          <Text style={[styles.progressNumber, currentStep >= 2 && styles.activeStepText]}>2</Text>
-        </View>
-      </View>
 
-      {/* Content */}
-      <View style={styles.content}>
-        {currentStep === 1 ? renderDateTimeStep() : renderDetailsStep()}
-      </View>
+        {/* Step Content */}
+        {currentStep === 1 && renderDateTimeStep()}
+        {currentStep === 2 && renderDetailsStep()}
+        {currentStep === 3 && renderConfirmStep()}
+      </ScrollView>
 
-      {/* Navigation Buttons */}
-      <View style={styles.navigationContainer}>
+      {/* Bottom Actions */}
+      <View style={styles.bottomActions}>
         {currentStep > 1 && (
           <Button
-            title={language === 'es' ? 'Anterior' : 'Back'}
-            onPress={handlePreviousStep}
-            variant="outline"
-            style={styles.navButton}
+            title={t('back') || (language === 'es' ? 'Atrás' : 'Back')}
+            onPress={() => setCurrentStep(currentStep - 1)}
+            variant="secondary"
+            style={styles.backButton}
           />
         )}
+        
         <Button
-          title={currentStep === 1 
-            ? (language === 'es' ? 'Continuar' : 'Continue')
-            : (language === 'es' ? 'Confirmar Reservación' : 'Confirm Booking')
+          title={
+            currentStep === 3
+              ? (t('confirmBooking') || (language === 'es' ? 'Confirmar Reserva' : 'Confirm Booking'))
+              : (t('continue') || (language === 'es' ? 'Continuar' : 'Continue'))
           }
-          onPress={handleNextStep}
+          onPress={() => {
+            if (currentStep === 3) {
+              handleSubmitBooking();
+            } else if (currentStep === 1 && (!selectedStartTime || !selectedEndTime || consecutiveBookingWarning)) {
+              // Don't allow progression if times not selected or consecutive warning
+              return;
+            } else {
+              setCurrentStep(currentStep + 1);
+            }
+          }}
+          style={styles.continueButton}
           loading={reservationLoading}
-          disabled={currentStep === 1 && (!selectedStartTime || !selectedEndTime)}
-          style={[styles.navButton, currentStep === 1 && styles.singleButton]}
+          disabled={
+            reservationLoading ||
+            (currentStep === 1 && (!selectedStartTime || !selectedEndTime || consecutiveBookingWarning)) ||
+            (currentStep === 3 && consecutiveBookingWarning)
+          }
         />
       </View>
     </View>
@@ -843,180 +936,178 @@ const AmenityBookingScreen = ({ route, navigation }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: COLORS.background.primary,
+    backgroundColor: COLORS.background,
+  },
+  scrollView: {
+    flex: 1,
+    padding: SPACING.md,
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    backgroundColor: COLORS.background,
   },
   loadingText: {
     marginTop: SPACING.md,
-    fontSize: FONT_SIZES.body,
+    fontSize: FONT_SIZES.md,
     color: COLORS.text.secondary,
   },
-  header: {
+  headerCard: {
+    marginBottom: SPACING.md,
+  },
+  amenityHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: SPACING.lg,
-    paddingVertical: SPACING.md,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.border,
   },
-  backButton: {
-    padding: SPACING.sm,
+  amenityInfo: {
+    flex: 1,
+    marginLeft: SPACING.md,
   },
-  headerTitle: {
-    fontSize: FONT_SIZES.h3,
+  amenityName: {
+    fontSize: FONT_SIZES.xl,
     fontWeight: 'bold',
     color: COLORS.text.primary,
   },
-  placeholder: {
-    width: 40,
+  amenityDescription: {
+    fontSize: FONT_SIZES.md,
+    color: COLORS.text.secondary,
+    marginTop: SPACING.xs,
   },
-  progressContainer: {
+  loungeTag: {
+    backgroundColor: COLORS.warning,
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: SPACING.xs,
+    borderRadius: 12,
+    alignSelf: 'flex-start',
+    marginTop: SPACING.sm,
+  },
+  loungeTagText: {
+    fontSize: FONT_SIZES.xs,
+    color: COLORS.white,
+    fontWeight: 'bold',
+  },
+  stepIndicator: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: SPACING.lg,
+  },
+  stepIndicatorContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: SPACING.lg,
-    paddingHorizontal: SPACING.xl,
   },
-  progressStep: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: COLORS.background.secondary,
-    borderWidth: 2,
-    borderColor: COLORS.border,
+  stepDot: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: COLORS.text.secondary,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  activeStep: {
+  activeStepDot: {
     backgroundColor: COLORS.primary,
-    borderColor: COLORS.primary,
   },
-  progressNumber: {
-    fontSize: FONT_SIZES.body,
+  stepDotText: {
+    fontSize: FONT_SIZES.sm,
+    color: COLORS.white,
     fontWeight: 'bold',
-    color: COLORS.text.secondary,
   },
-  activeStepText: {
+  activeStepDotText: {
     color: COLORS.white,
   },
-  progressLine: {
-    flex: 1,
+  stepLine: {
+    width: 40,
     height: 2,
-    backgroundColor: COLORS.border,
-    marginHorizontal: SPACING.md,
+    backgroundColor: COLORS.text.secondary,
   },
-  activeProgressLine: {
+  activeStepLine: {
     backgroundColor: COLORS.primary,
   },
-  content: {
-    flex: 1,
-  },
-  stepContent: {
-    flex: 1,
-    paddingHorizontal: SPACING.lg,
+  stepCard: {
+    marginBottom: SPACING.lg,
   },
   stepTitle: {
-    fontSize: FONT_SIZES.h2,
+    fontSize: FONT_SIZES.lg,
     fontWeight: 'bold',
     color: COLORS.text.primary,
-    marginBottom: SPACING.lg,
-    textAlign: 'center',
-  },
-  selectionCard: {
-    marginBottom: SPACING.lg,
-    padding: SPACING.lg,
-  },
-  sectionTitle: {
-    fontSize: FONT_SIZES.h4,
-    fontWeight: '600',
-    color: COLORS.text.primary,
-    marginBottom: SPACING.sm,
-  },
-  sectionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
     marginBottom: SPACING.md,
   },
   dateButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: SPACING.md,
-    paddingHorizontal: SPACING.lg,
+    padding: SPACING.md,
+    backgroundColor: COLORS.background,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: COLORS.border,
-    backgroundColor: COLORS.white,
+    borderColor: COLORS.border?.light || '#E0E0E0',
+    marginBottom: SPACING.md,
   },
   dateButtonText: {
-    fontSize: FONT_SIZES.body,
+    fontSize: FONT_SIZES.md,
     color: COLORS.text.primary,
-    flex: 1,
-    marginLeft: SPACING.md,
+    marginLeft: SPACING.sm,
   },
-  selectedTimeContainer: {
-    backgroundColor: COLORS.primary + '10',
+  warningCard: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
     padding: SPACING.md,
+    backgroundColor: COLORS.background?.error || '#FFEBEE',
     borderRadius: 8,
     marginBottom: SPACING.md,
-    flexDirection: 'row',
-    alignItems: 'center',
+    borderLeftWidth: 4,
+    borderLeftColor: COLORS.warning,
   },
-  selectedTimeLabel: {
-    fontSize: FONT_SIZES.small,
-    color: COLORS.primary,
-    fontWeight: '600',
-    marginRight: SPACING.sm,
+  warningContent: {
+    flex: 1,
+    marginLeft: SPACING.sm,
   },
-  selectedTimeValue: {
-    fontSize: FONT_SIZES.body,
-    color: COLORS.primary,
+  warningTitle: {
+    fontSize: FONT_SIZES.md,
     fontWeight: 'bold',
+    color: COLORS.warning,
+    marginBottom: SPACING.xs,
   },
-  timesGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: SPACING.sm,
+  warningMessage: {
+    fontSize: FONT_SIZES.sm,
+    color: COLORS.text.primary,
   },
-  timeButton: {
-    paddingHorizontal: SPACING.md,
+  sectionTitle: {
+    fontSize: FONT_SIZES.md,
+    fontWeight: 'bold',
+    color: COLORS.text.primary,
+    marginBottom: SPACING.sm,
+    marginTop: SPACING.md,
+  },
+  timeScrollView: {
+    marginBottom: SPACING.md,
+  },
+  timeSlot: {
     paddingVertical: SPACING.sm,
+    paddingHorizontal: SPACING.md,
+    marginRight: SPACING.sm,
+    backgroundColor: COLORS.background,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: COLORS.border,
-    backgroundColor: COLORS.white,
-    minWidth: '30%',
+    borderColor: COLORS.border?.light || '#E0E0E0',
     alignItems: 'center',
+    minWidth: 80,
   },
-  selectedTime: {
+  selectedTimeSlot: {
     backgroundColor: COLORS.primary,
     borderColor: COLORS.primary,
   },
-  endTimeButton: {
-    borderColor: COLORS.success,
-  },
-  selectedEndTime: {
-    backgroundColor: COLORS.success,
-    borderColor: COLORS.success,
-  },
-  timeText: {
-    fontSize: FONT_SIZES.body,
+  timeSlotText: {
+    fontSize: FONT_SIZES.sm,
     color: COLORS.text.primary,
     fontWeight: '500',
   },
-  selectedTimeText: {
+  selectedTimeSlotText: {
     color: COLORS.white,
-  },
-  selectedEndTimeText: {
-    color: COLORS.white,
+    fontWeight: 'bold',
   },
   durationText: {
-    fontSize: FONT_SIZES.small,
+    fontSize: FONT_SIZES.xs,
     color: COLORS.text.secondary,
     marginTop: 2,
   },
@@ -1028,85 +1119,121 @@ const styles = StyleSheet.create({
     paddingVertical: SPACING.xl,
   },
   noTimesText: {
-    fontSize: FONT_SIZES.body,
+    fontSize: FONT_SIZES.md,
     color: COLORS.text.secondary,
     textAlign: 'center',
-    marginTop: SPACING.md,
+    marginTop: SPACING.sm,
   },
-  summaryCard: {
-    backgroundColor: COLORS.success + '10',
-    borderColor: COLORS.success,
-    borderWidth: 1,
-  },
-  summaryHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  inputGroup: {
     marginBottom: SPACING.md,
   },
-  summaryTitle: {
-    fontSize: FONT_SIZES.h4,
-    fontWeight: 'bold',
-    color: COLORS.success,
-    marginLeft: SPACING.sm,
-  },
-  summaryRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: SPACING.sm,
-  },
-  summaryLabel: {
-    fontSize: FONT_SIZES.body,
-    color: COLORS.text.secondary,
-    marginLeft: SPACING.md,
-    flex: 1,
-  },
-  summaryValue: {
-    fontSize: FONT_SIZES.body,
-    color: COLORS.text.primary,
+  inputLabel: {
+    fontSize: FONT_SIZES.md,
     fontWeight: '500',
+    color: COLORS.text.primary,
+    marginBottom: SPACING.xs,
   },
-  section: {
-    marginBottom: SPACING.lg,
-    padding: SPACING.lg,
+  input: {
+    marginBottom: SPACING.xs,
   },
-  visitorInput: {
-    marginBottom: SPACING.sm,
+  notesInput: {
+    height: 80,
+    textAlignVertical: 'top',
   },
-  fieldNote: {
-    fontSize: FONT_SIZES.small,
+  inputHelper: {
+    fontSize: FONT_SIZES.sm,
     color: COLORS.text.secondary,
   },
-  switchRow: {
+  switchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
   },
   switchLabel: {
+    flex: 1,
+  },
+  requirementsNotice: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    padding: SPACING.md,
+    backgroundColor: COLORS.background,
+    borderRadius: 8,
+    marginTop: SPACING.md,
+    borderLeftWidth: 4,
+    borderLeftColor: COLORS.primary,
+  },
+  requirementsContent: {
+    flex: 1,
+    marginLeft: SPACING.sm,
+  },
+  requirementsTitle: {
+    fontSize: FONT_SIZES.md,
+    fontWeight: 'bold',
+    color: COLORS.primary,
+    marginBottom: SPACING.xs,
+  },
+  requirementsText: {
+    fontSize: FONT_SIZES.sm,
+    color: COLORS.text.primary,
+    lineHeight: 20,
+  },
+  confirmationDetails: {
+    marginBottom: SPACING.lg,
+  },
+  confirmRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: SPACING.sm,
+  },
+  confirmLabel: {
+    fontSize: FONT_SIZES.md,
+    color: COLORS.text.secondary,
+    marginLeft: SPACING.sm,
+    marginRight: SPACING.sm,
+    minWidth: 80,
+  },
+  confirmValue: {
+    fontSize: FONT_SIZES.md,
+    color: COLORS.text.primary,
+    fontWeight: '500',
+    flex: 1,
+  },
+  approvalNotice: {
     flexDirection: 'row',
     alignItems: 'center',
+    padding: SPACING.md,
+    borderRadius: 8,
+  },
+  loungeApprovalNotice: {
+    backgroundColor: COLORS.background?.error || '#FFEBEE',
+  },
+  autoApprovalNotice: {
+    backgroundColor: '#E8F5E8',
+  },
+  approvalNoticeText: {
+    fontSize: FONT_SIZES.sm,
+    marginLeft: SPACING.sm,
     flex: 1,
   },
-  switchTextContainer: {
-    marginLeft: SPACING.md,
-    flex: 1,
+  loungeApprovalText: {
+    color: COLORS.warning,
   },
-  notesInput: {
-    minHeight: 80,
-    textAlignVertical: 'top',
+  autoApprovalText: {
+    color: COLORS.success,
   },
-  navigationContainer: {
+  bottomActions: {
     flexDirection: 'row',
-    paddingHorizontal: SPACING.lg,
-    paddingVertical: SPACING.lg,
+    padding: SPACING.md,
+    backgroundColor: COLORS.surface,
     borderTopWidth: 1,
-    borderTopColor: COLORS.border,
-    gap: SPACING.md,
+    borderTopColor: COLORS.border?.light || '#E0E0E0',
   },
-  navButton: {
+  backButton: {
     flex: 1,
+    marginRight: SPACING.sm,
   },
-  singleButton: {
-    marginLeft: 0,
+  continueButton: {
+    flex: 2,
   },
 });
 
