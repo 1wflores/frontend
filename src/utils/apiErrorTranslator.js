@@ -1,13 +1,14 @@
-// src/utils/apiErrorTranslator.js
+// Enhanced ApiErrorTranslator.js with better error handling and translation
+
 import { Localization } from './localization';
 
 /**
- * Utility class to translate API error messages from English to user's language
+ * Enhanced utility class to translate API error messages and handle various error scenarios
  */
 export class ApiErrorTranslator {
   
   /**
-   * Translate a single error message
+   * Translate a single error message with improved logic
    * @param {string} errorMessage - The error message in English
    * @param {string} language - Target language ('en' or 'es')
    * @returns {string} - Translated error message
@@ -15,15 +16,21 @@ export class ApiErrorTranslator {
   static translateError(errorMessage, language = null) {
     if (!errorMessage) return errorMessage;
     
-    // Try to translate using validation errors mapping first
-    const translated = Localization.translateValidationError(errorMessage, language);
+    const targetLang = language || Localization.currentLanguage;
     
-    // If not found in validation errors, try smart translate
-    if (translated === errorMessage) {
-      return Localization.smartTranslate(errorMessage, language);
+    // If already in English and target is English, return as-is
+    if (targetLang === 'en') {
+      return errorMessage;
     }
     
-    return translated;
+    // First try direct validation error translation
+    const validationTranslation = Localization.translateValidationError(errorMessage, targetLang);
+    if (validationTranslation !== errorMessage) {
+      return validationTranslation;
+    }
+    
+    // Then try smart translation for other content
+    return Localization.smartTranslate(errorMessage, targetLang);
   }
 
   /**
@@ -52,7 +59,7 @@ export class ApiErrorTranslator {
   }
 
   /**
-   * Translate API response errors
+   * Enhanced API response error translation
    * @param {Object} apiResponse - API response object
    * @param {string} language - Target language ('en' or 'es')
    * @returns {Object} - API response with translated errors
@@ -77,11 +84,16 @@ export class ApiErrorTranslator {
       translated.error = this.translateError(translated.error, language);
     }
     
+    // Handle data.message (nested message)
+    if (translated.data?.message) {
+      translated.data.message = this.translateError(translated.data.message, language);
+    }
+    
     return translated;
   }
 
   /**
-   * Extract and translate error message from various error sources
+   * Enhanced error extraction and translation from various error sources
    * @param {Error|Object|string} error - Error object, API response, or string
    * @param {string} language - Target language ('en' or 'es')
    * @returns {string} - Translated error message
@@ -92,11 +104,19 @@ export class ApiErrorTranslator {
     if (typeof error === 'string') {
       errorMessage = error;
     } else if (error?.response?.data?.message) {
-      // Axios error with API response
+      // Axios error with API response message
       errorMessage = error.response.data.message;
     } else if (error?.response?.data?.error) {
       // Alternative API error format
       errorMessage = error.response.data.error;
+    } else if (error?.response?.data) {
+      // Try to extract any error from response data
+      const responseData = error.response.data;
+      if (typeof responseData === 'string') {
+        errorMessage = responseData;
+      } else if (responseData.errors && Array.isArray(responseData.errors)) {
+        errorMessage = responseData.errors[0];
+      }
     } else if (error?.message) {
       // Standard Error object
       errorMessage = error.message;
@@ -118,38 +138,28 @@ export class ApiErrorTranslator {
    * @returns {string} - User-friendly error message
    */
   static getStatusCodeMessage(statusCode, language = null) {
-    const lang = language || Localization.currentLanguage;
+    const targetLang = language || Localization.currentLanguage;
     
-    const statusMessages = {
-      en: {
-        400: 'Invalid request. Please check your input and try again.',
-        401: 'Unauthorized. Please log in again.',
-        403: 'Access denied. You don\'t have permission to perform this action.',
-        404: 'The requested resource was not found.',
-        409: 'Conflict. The resource already exists or cannot be modified.',
-        422: 'Invalid data provided. Please check your input.',
-        429: 'Too many requests. Please wait and try again.',
-        500: 'Server error. Please try again later.',
-        502: 'Service temporarily unavailable. Please try again later.',
-        503: 'Service temporarily unavailable. Please try again later.',
-        504: 'Request timeout. Please try again.',
-      },
-      es: {
-        400: 'Solicitud inválida. Por favor verifique su entrada e intente de nuevo.',
-        401: 'No autorizado. Por favor inicie sesión de nuevo.',
-        403: 'Acceso denegado. No tiene permisos para realizar esta acción.',
-        404: 'El recurso solicitado no fue encontrado.',
-        409: 'Conflicto. El recurso ya existe o no puede ser modificado.',
-        422: 'Datos inválidos proporcionados. Por favor verifique su entrada.',
-        429: 'Demasiadas solicitudes. Por favor espere e intente de nuevo.',
-        500: 'Error del servidor. Por favor intente más tarde.',
-        502: 'Servicio temporalmente no disponible. Por favor intente más tarde.',
-        503: 'Servicio temporalmente no disponible. Por favor intente más tarde.',
-        504: 'Tiempo de espera agotado. Por favor intente de nuevo.',
-      }
+    const statusKeyMap = {
+      400: 'validationError',
+      401: 'authError',
+      403: 'permissionError',
+      404: 'notFoundError',
+      409: 'conflictError',
+      422: 'validationError',
+      429: 'rateLimitError',
+      500: 'serverError',
+      502: 'serverError',
+      503: 'maintenanceError',
+      504: 'networkError',
     };
     
-    return statusMessages[lang]?.[statusCode] || statusMessages.en[statusCode] || 'An unexpected error occurred.';
+    const errorKey = statusKeyMap[statusCode];
+    if (errorKey) {
+      return Localization.getTranslation(`errors.${errorKey}`, targetLang);
+    }
+    
+    return Localization.getTranslation('errors.unknownError', targetLang);
   }
 
   /**
@@ -178,5 +188,97 @@ export class ApiErrorTranslator {
     });
     
     return translated;
+  }
+
+  /**
+   * Enhanced error handler for common authentication scenarios
+   * @param {Error} error - Error object from authentication request
+   * @param {string} language - Target language ('en' or 'es')
+   * @returns {Object} - Structured error response with title and message
+   */
+  static handleAuthError(error, language = null) {
+    const targetLang = language || Localization.currentLanguage;
+    
+    let title = Localization.getTranslation('auth.loginFailed', targetLang);
+    let message = '';
+    
+    if (error?.response) {
+      const status = error.response.status;
+      
+      switch (status) {
+        case 401:
+          // Invalid credentials
+          if (error.response.data?.message) {
+            message = this.translateError(error.response.data.message, targetLang);
+          } else {
+            message = Localization.getTranslation('auth.invalidCredentials', targetLang);
+          }
+          break;
+          
+        case 429:
+          // Rate limited
+          message = Localization.getTranslation('errors.rateLimitError', targetLang);
+          break;
+          
+        case 500:
+        case 502:
+        case 503:
+          // Server errors
+          message = Localization.getTranslation('errors.serverError', targetLang);
+          break;
+          
+        default:
+          message = this.extractAndTranslateError(error, targetLang);
+      }
+    } else if (error?.message) {
+      // Network or other errors
+      if (error.message.includes('Network') || error.message.includes('fetch')) {
+        message = Localization.getTranslation('errors.networkError', targetLang);
+      } else {
+        message = this.translateError(error.message, targetLang);
+      }
+    } else {
+      // Fallback
+      message = Localization.getTranslation('errors.unknownError', targetLang);
+    }
+    
+    return {
+      title,
+      message,
+      originalError: error
+    };
+  }
+
+  /**
+   * Utility method to create user-friendly error messages for network requests
+   * @param {Error} error - Error from network request
+   * @param {string} operation - Description of what operation failed (e.g., 'login', 'booking')
+   * @param {string} language - Target language ('en' or 'es')
+   * @returns {Object} - Formatted error with title and message
+   */
+  static createUserFriendlyError(error, operation = 'operation', language = null) {
+    const targetLang = language || Localization.currentLanguage;
+    
+    // For authentication operations, use specialized handler
+    if (operation === 'login' || operation === 'auth') {
+      return this.handleAuthError(error, targetLang);
+    }
+    
+    let title = Localization.getTranslation('common.error', targetLang);
+    let message = '';
+    
+    if (error?.response?.status) {
+      message = this.getStatusCodeMessage(error.response.status, targetLang);
+    } else if (error?.message) {
+      message = this.translateError(error.message, targetLang);
+    } else {
+      message = Localization.getTranslation('errors.unknownError', targetLang);
+    }
+    
+    return {
+      title,
+      message,
+      originalError: error
+    };
   }
 }

@@ -1,3 +1,5 @@
+// Updated LoginScreen.jsx with proper error handling and translation
+
 import React, { useState } from 'react';
 import {
   View,
@@ -12,6 +14,7 @@ import {
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { useAuth } from '../../hooks/useAuth';
 import { useLanguage } from '../../contexts/LanguageContext';
+import { ApiErrorTranslator } from '../../utils/apiErrorTranslator'; // ✅ Added proper error translation
 import { Input } from '../../components/common/Input';
 import { Button } from '../../components/common/Button';
 import { ValidationUtils } from '../../utils/validationUtils';
@@ -50,10 +53,43 @@ const LoginScreen = () => {
       setLoading(true);
       await login({ username: username.trim().toLowerCase(), password });
     } catch (error) {
+      console.error('Login error:', error);
+      
+      // ✅ IMPROVED: Better error handling with proper translation
+      let errorMessage = '';
+      let errorTitle = t('auth.loginFailed');
+
+      // Extract and translate the error message from the server
+      if (error.response?.data?.message) {
+        // Server provided a specific error message
+        errorMessage = ApiErrorTranslator.translateError(error.response.data.message, language);
+      } else if (error.response?.status === 401) {
+        // Unauthorized - likely invalid credentials
+        errorMessage = t('auth.invalidCredentials');
+      } else if (error.response?.status >= 500) {
+        // Server error
+        errorMessage = t('errors.serverError');
+      } else if (!error.response) {
+        // Network error
+        errorMessage = t('errors.networkError');
+      } else {
+        // Fallback to a generic error message
+        errorMessage = t('errors.unknownError');
+      }
+
+      // ✅ IMPROVED: Better error dialog with proper styling
       Alert.alert(
-        t('loginFailed'),
-        error.response?.data?.error || t('invalidCredentials'),
-        [{ text: t('ok') }]
+        errorTitle,
+        errorMessage,
+        [
+          { 
+            text: t('common.ok'), 
+            style: 'default'
+          }
+        ],
+        { 
+          cancelable: false 
+        }
       );
     } finally {
       setLoading(false);
@@ -84,40 +120,36 @@ const LoginScreen = () => {
         {/* Header */}
         <View style={styles.header}>
           <Text style={styles.title}>
-            {language === 'es' ? 'Bienvenido' : 'Welcome'}
+            {t('auth.welcome')}
           </Text>
           <Text style={styles.subtitle}>
-            {language === 'es' 
-              ? 'Inicia sesión para reservar amenidades'
-              : 'Sign in to book amenities'}
+            {t('auth.loginSubtitle')}
           </Text>
         </View>
 
-        {/* Login Form */}
+        {/* Form */}
         <View style={styles.form}>
           <Input
-            label={language === 'es' ? 'Usuario' : 'Username'}
             value={username}
             onChangeText={setUsername}
             error={errors.username}
+            placeholder={t('auth.usernamePlaceholder')}
+            leftIcon="home"
             autoCapitalize="none"
             autoCorrect={false}
-            placeholder={language === 'es' ? 'apartment123' : 'apartment123'}
-            leftIcon="person"
           />
 
           <Input
-            label={language === 'es' ? 'Contraseña' : 'Password'}
             value={password}
             onChangeText={setPassword}
             error={errors.password}
-            secureTextEntry
-            placeholder={language === 'es' ? 'Tu contraseña' : 'Your password'}
+            placeholder={t('auth.passwordPlaceholder')}
             leftIcon="lock"
+            secureTextEntry
           />
 
           <Button
-            title={language === 'es' ? 'Iniciar Sesión' : 'Sign In'}
+            title={t('auth.signIn')}
             onPress={handleLogin}
             loading={loading}
             style={styles.loginButton}
@@ -127,9 +159,7 @@ const LoginScreen = () => {
         {/* Footer */}
         <View style={styles.footer}>
           <Text style={styles.footerText}>
-            {language === 'es' 
-              ? '¿Necesitas ayuda? Contacta al administrador'
-              : 'Need help? Contact your administrator'}
+            {t('auth.needHelp')}
           </Text>
         </View>
       </ScrollView>
