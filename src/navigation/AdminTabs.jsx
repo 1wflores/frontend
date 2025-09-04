@@ -1,8 +1,8 @@
-// AdminTabs.jsx - Fixed with dynamic translations  
+// AdminTabs.jsx - Fixed with proper localization support
 import React from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import Icon from 'react-native-vector-icons/MaterialIcons';
-import { useLanguage } from '../contexts/LanguageContext'; // ✅ ADDED: Language support
+import { useLanguage } from '../contexts/LanguageContext';
 import { COLORS } from '../utils/constants';
 
 // Import admin screens
@@ -15,7 +15,7 @@ import ProfileScreen from '../screens/main/ProfileScreen';
 const Tab = createBottomTabNavigator();
 
 export const AdminTabs = () => {
-  const { language, t } = useLanguage(); // ✅ ADDED: Language hook
+  const { language, t } = useLanguage();
 
   return (
     <Tab.Navigator
@@ -67,29 +67,29 @@ export const AdminTabs = () => {
       <Tab.Screen 
         name="AdminDashboard" 
         component={AdminDashboardScreen}
-        options={{ title: t('dashboard') }} // ✅ FIXED: Dynamic translation
+        options={{ title: t('dashboard') }}
       />
       <Tab.Screen 
         name="Reservations" 
         component={ReservationManagementScreen}
-        options={{ title: t('reservations') }} // ✅ FIXED: Dynamic translation
+        options={{ title: t('reservations') }}
       />
       <Tab.Screen 
         name="Users" 
         component={UserManagementScreen}
         options={{ 
-          title: language === 'es' ? 'Usuarios' : 'Users' // ✅ FIXED: Dynamic translation
+          title: language === 'es' ? 'Usuarios' : 'Users'
         }}
       />
       <Tab.Screen 
         name="Amenities" 
         component={AmenityManagementScreen}
-        options={{ title: t('amenities') }} // ✅ FIXED: Dynamic translation
+        options={{ title: t('amenities') }}
       />
       <Tab.Screen 
         name="Profile" 
         component={ProfileScreen}
-        options={{ title: t('profile') }} // ✅ FIXED: Dynamic translation
+        options={{ title: t('profile') }}
       />
     </Tab.Navigator>
   );

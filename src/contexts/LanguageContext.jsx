@@ -41,9 +41,9 @@ export const LanguageProvider = ({ children }) => {
     }
   };
 
-  // Translation function
+  // ✅ FIXED: Translation function now calls getTranslation instead of t
   const t = (key) => {
-    return Localization.t(key, language);
+    return Localization.getTranslation(key, language);
   };
 
   const value = {
